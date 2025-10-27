@@ -1,0 +1,20 @@
+{
+  "name": "docs",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync:dry": "CONFLUENCE_DRY_RUN=true markdown-confluence-sync --logLevel info",
+    "sync": "markdown-confluence-sync --logLevel info",
+    "pull": "node scripts/pull-from-confluence.mjs"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@telefonica/markdown-confluence-sync": "^2.2.0",
+    "dotenv": "^16.4.5",
+    "turndown": "^7.1.2",
+    "turndown-plugin-gfm": "^1.0.2"
+  }
+}
