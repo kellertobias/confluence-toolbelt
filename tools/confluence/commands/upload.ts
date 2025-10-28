@@ -19,9 +19,20 @@ export async function uploadAll(opts: Options): Promise<void> {
 
   let files: string[] = [];
   if (all) {
-    files = walkMarkdown(path.resolve(opts.cwd, "docs"));
+    files = walkMarkdown(opts.cwd);
   } else {
     files = (await listChangedMarkdownFiles(opts.cwd)).map((p) => path.resolve(opts.cwd, p));
+    // Fallback: if git shows no changes, include all headered markdown files
+    if (files.length === 0) {
+      const allMd = walkMarkdown(opts.cwd);
+      files = allMd.filter((f) => {
+        try {
+          const txt = fs.readFileSync(f, "utf8");
+          const { meta } = parseHeader(txt);
+          return !!meta.pageId;
+        } catch { return false; }
+      });
+    }
   }
   if (files.length === 0) { console.log("[upload] No candidate files"); return; }
 

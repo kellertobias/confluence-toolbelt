@@ -41,6 +41,60 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
 }
 
 /**
+ * Extract header extras (emoji/status/image) from storage HTML if present.
+ * Heuristics:
+ * - Emoji: look for leading emoji in title (not available here) or first emoji-like char in first heading; skip for now.
+ * - Status: detect Status macro markup <ac:structured-macro ac:name="status"> and map to "color:Title".
+ * - Image: first image in page body <ri:url ri:value="..."> or <img src="...">.
+ */
+export function extractHeaderExtrasFromStorage(storageHtml: string, title: string): { emoji?: string; status?: string; image?: string } {
+  const out: { emoji?: string; status?: string; image?: string } = {};
+  // Emoji: detect shortcode at start of title like :rocket: OR leading unicode emoji
+  const emojiShort = title?.match(/^:([a-z0-9_+\-]+):\s*/i);
+  if (emojiShort) {
+    out.emoji = emojiShort[1].toLowerCase();
+  } else {
+    // Leading unicode emoji
+    const uni = title?.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
+    const ch = uni?.[1];
+    if (ch) {
+      const map: Record<string, string> = {
+        "🚀": "rocket",
+        "🔥": "fire",
+        "✅": "white_check_mark",
+        "⚠️": "warning",
+        "🐛": "bug",
+        "📌": "pushpin",
+        "📷": "camera",
+        "⭐": "star",
+      };
+      out.emoji = map[ch] || ch;
+    }
+  }
+
+  // Status: find status macro and extract colour/color and title params
+  const statusBlock = storageHtml.match(/<ac:structured-macro[^>]*\bac:name=["']status["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/i);
+  if (statusBlock) {
+    const inner = statusBlock[1];
+    const titleParam = inner.match(/<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
+    const colourParam = inner.match(/<ac:parameter[^>]*\bac:name=["'](?:colour|color)["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
+    const label = (titleParam?.[1] || '').replace(/<[^>]+>/g, '').trim();
+    const color = (colourParam?.[1] || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
+    if (label || color) out.status = `${color || 'grey'}:${label || 'Status'}`;
+  }
+
+  // Image: prefer Confluence ri:url, else fallback to img src
+  const riUrl = storageHtml.match(/<ri:url[^>]*\bri:value=["']([^"']+)["'][^>]*>/i);
+  if (riUrl?.[1]) out.image = riUrl[1];
+  if (!out.image) {
+    const imgSrc = storageHtml.match(/<img[^>]*\bsrc=["']([^"']+)["'][^>]*>/i);
+    if (imgSrc?.[1]) out.image = imgSrc[1];
+  }
+
+  return out;
+}
+
+/**
  * Replace nodes in storage HTML by nodeId with HTML snippets.
  * If a nodeId is not found, leaves storage unchanged and returns false for that id.
  */

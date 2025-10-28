@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { fromEnv } from "../api.js";
 import { emitHeader, parseHeader } from "../md-header.js";
-import { storageToMarkdownBlocks } from "../storage-dom.js";
+import { storageToMarkdownBlocks, extractHeaderExtrasFromStorage } from "../storage-dom.js";
 import { emitTag } from "../inline-tags.js";
 
 interface Options { cwd: string; args?: string[] }
@@ -24,6 +24,11 @@ export async function downloadAll(opts: Options): Promise<void> {
   for (const [relPath, meta] of entries) {
     const filePath = path.resolve(opts.cwd, relPath);
     const { storageHtml, title: remoteTitle, spaceId: remoteSpaceId } = await client.getPageStorage(meta.id);
+    const metaResp: any = await client.getPage(meta.id);
+    const iconEmoji: string | undefined = metaResp?.icon?.emoji?.shortName || metaResp?.icon?.emoji?.shortcut || metaResp?.icon?.shortName;
+    const iconUrl: string | undefined = metaResp?.icon?.url || metaResp?.icon?.custom?.url;
+    const coverUrl: string | undefined = metaResp?.coverImage?.url || metaResp?.bannerImage?.url;
+    const extras = extractHeaderExtrasFromStorage(storageHtml, remoteTitle);
     const blocks = storageToMarkdownBlocks(storageHtml);
     const body = blocks
       .map((b) => (b.nodeId ? emitTag({ tagType: "content", nodeId: b.nodeId }) : "") + b.markdown + "\n")
@@ -35,9 +40,9 @@ export async function downloadAll(opts: Options): Promise<void> {
       pageId: meta.id,
       spaceId: meta.spaceId || remoteSpaceId,
       title: meta.title || remoteTitle,
-      emoji: existingHeader.emoji,
-      status: existingHeader.status,
-      image: existingHeader.image,
+      emoji: ((iconEmoji ? String(iconEmoji).replace(/:^|:$/g, "") : undefined) ?? extras.emoji ?? existingHeader.emoji),
+      status: extras.status ?? existingHeader.status,
+      image: ((iconUrl || coverUrl || extras.image) ?? existingHeader.image),
     });
     const next = header + body.trim() + "\n";
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
