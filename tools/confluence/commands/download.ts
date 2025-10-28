@@ -13,6 +13,7 @@ interface Options { cwd: string; args?: string[] }
 
 export async function downloadAll(opts: Options): Promise<void> {
   const force = opts.args?.includes("--force");
+  const verbose = opts.args?.includes("--verbose");
   const client = fromEnv();
   // Discover .md files and extract pageId from header
   const all = walkMarkdown(opts.cwd);
@@ -24,11 +25,38 @@ export async function downloadAll(opts: Options): Promise<void> {
   for (const [relPath, meta] of entries) {
     const filePath = path.resolve(opts.cwd, relPath);
     const { storageHtml, title: remoteTitle, spaceId: remoteSpaceId } = await client.getPageStorage(meta.id);
-    const metaResp: any = await client.getPage(meta.id);
-    const iconEmoji: string | undefined = metaResp?.icon?.emoji?.shortName || metaResp?.icon?.emoji?.shortcut || metaResp?.icon?.shortName;
-    const iconUrl: string | undefined = metaResp?.icon?.url || metaResp?.icon?.custom?.url;
-    const coverUrl: string | undefined = metaResp?.coverImage?.url || metaResp?.bannerImage?.url;
+    const adf = await client.getPageAtlasDoc(meta.id);
+    const v1 = await client.getPageV1Content(meta.id);
     const extras = extractHeaderExtrasFromStorage(storageHtml, remoteTitle);
+    // If ADF contains a page metadata block with icon/cover/status, prefer it
+    if (adf) {
+      try {
+        const doc = adf;
+        // Find status panel block
+        const statusNode = JSON.stringify(doc).match(/"type"\s*:\s*"status"[\s\S]*?"text"\s*:\s*"([^"]+)"/i);
+        if (statusNode && !extras.status) extras.status = `grey:${statusNode[1]}`;
+        const media = JSON.stringify(doc).match(/"type"\s*:\s*"media"[\s\S]*?"url"\s*:\s*"([^"]+)"/i);
+        if (media && !extras.image) extras.image = media[1];
+      } catch {}
+    }
+    // When verbose, persist the raw storage HTML in a hidden sibling file for inspection/debugging.
+    if (verbose) {
+      /**
+       * Write the original Confluence storage HTML next to the markdown file
+       * using a hidden filename: `.<filename>.confluence`.
+       *
+       * Why: Useful for debugging mapping issues and ensuring partial updates
+       * map correctly back to original nodes.
+       */
+      const verbosePath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.confluence`);
+      try {
+        fs.writeFileSync(verbosePath, storageHtml ?? "", "utf8");
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[download] Failed to write verbose file: ${path.relative(opts.cwd, verbosePath)}:`, err);
+      }
+    }
+
     const blocks = storageToMarkdownBlocks(storageHtml);
     const body = blocks
       .map((b) => (b.nodeId ? emitTag({ tagType: "content", nodeId: b.nodeId }) : "") + b.markdown + "\n")
@@ -40,9 +68,7 @@ export async function downloadAll(opts: Options): Promise<void> {
       pageId: meta.id,
       spaceId: meta.spaceId || remoteSpaceId,
       title: meta.title || remoteTitle,
-      emoji: ((iconEmoji ? String(iconEmoji).replace(/:^|:$/g, "") : undefined) ?? extras.emoji ?? existingHeader.emoji),
-      status: extras.status ?? existingHeader.status,
-      image: ((iconUrl || coverUrl || extras.image) ?? existingHeader.image),
+      status: (v1?.metadata?.properties?.status?.value) ?? extras.status ?? existingHeader.status,
     });
     const next = header + body.trim() + "\n";
     fs.mkdirSync(path.dirname(filePath), { recursive: true });

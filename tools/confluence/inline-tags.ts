@@ -1,7 +1,9 @@
 /**
  * Inline tag parser for mapping markdown blocks to Confluence storage node IDs.
  *
- * Tag format: `<!-- tag:tagtype nodeId:789 -->` placed immediately before block.
+ * Supported formats (both parsed; emitter prefers the simple node tag):
+ * - `<!-- node:789 -->`
+ * - `<!-- tag:content nodeId:789 -->` (legacy; still accepted)
  */
 
 export interface InlineTag {
@@ -9,7 +11,8 @@ export interface InlineTag {
   nodeId?: string;
 }
 
-const TAG_RE = /<!--\s*tag:(?<type>[\w-]+)?\s+(?:nodeId:(?<id>[\w-:]+))\s*-->/;
+const LEGACY_TAG_RE = /<!--\s*tag:(?<type>[\w-]+)?\s+(?:nodeId:(?<id>[\w-:]+))\s*-->/;
+const NODE_TAG_RE = /<!--\s*node:(?<id>[\w-:]+)\s*-->/;
 
 export interface MarkdownBlock {
   tag?: InlineTag;
@@ -30,10 +33,15 @@ export function parseBlocks(markdownBody: string): MarkdownBlock[] {
   }
 
   for (const line of lines) {
-    const m = line.match(TAG_RE);
-    if (m) {
+    const nodeMatch = line.match(NODE_TAG_RE);
+    const legacyMatch = nodeMatch ? null : line.match(LEGACY_TAG_RE);
+    if (nodeMatch || legacyMatch) {
       flush();
-      pendingTag = { tagType: m.groups?.type, nodeId: m.groups?.id };
+      if (nodeMatch) {
+        pendingTag = { tagType: "content", nodeId: nodeMatch.groups?.id };
+      } else if (legacyMatch) {
+        pendingTag = { tagType: legacyMatch.groups?.type, nodeId: legacyMatch.groups?.id };
+      }
       continue;
     }
     current.push(line);
@@ -47,7 +55,11 @@ export function parseBlocks(markdownBody: string): MarkdownBlock[] {
 }
 
 export function emitTag(t: InlineTag): string {
-  const parts = ["<!-- ", `tag:${t.tagType ?? "content"}`, t.nodeId ? ` nodeId:${t.nodeId}` : "", " -->"]; 
+  // Prefer the concise node tag format when nodeId is present.
+  if (t.nodeId) {
+    return `<!-- node:${t.nodeId} -->\n`;
+  }
+  const parts = ["<!-- ", `tag:${t.tagType ?? "content"}`, " -->"];
   return parts.join("") + "\n";
 }
 

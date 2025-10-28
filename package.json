@@ -6,6 +6,7 @@
     "confluence:download": "tsx tools/confluence/cli.ts download",
     "confluence:upload": "tsx tools/confluence/cli.ts upload",
     "confluence:create": "tsx tools/confluence/cli.ts create",
+    "confluence:task": "tsx tools/confluence/cli.ts task",
     "test:unit": "vitest run"
   },
   "author": "",

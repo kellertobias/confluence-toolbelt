@@ -19,25 +19,81 @@ export interface MappedNode {
 }
 
 /**
- * Convert storage HTML into an ordered list of mappable blocks.
- * Heuristic: consider top-level blocks (p, h1..h6, ul/ol, pre, table, div with data-node-id).
+ * Convert storage HTML into an ordered list of mappable blocks. Each block
+ * corresponds to a top-level DOM child node and carries its `data-node-id`
+ * when present. This enables targeted partial updates by node ID.
+ *
+ * Heuristics:
+ * - Respect macro placeholders via normalizeMacros/decoder
+ * - Render tables to GFM using renderTableMarkdown
+ * - For generic elements, convert outerHTML via Turndown and trim
  */
 export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
-  const preprocessed = normalizeMacros(storageHtml);
-  // Table tokenization to preserve correct row formatting
-  const tables: string[] = [];
-  const tokenized = preprocessed.replace(/<table[\s\S]*?<\/table>/gi, (match) => {
-    const idx = tables.push(match) - 1;
-    return `MD_TABLE(${idx})`;
-  });
-  // Convert to markdown via turndown
-  const mdRaw = turndown.turndown(tokenized || "");
-  // Decode widget/comment tokens and then replace table tokens to GFM
-  const decoded = decodeMdCommentTokens(mdRaw);
-  let normalized = replaceTableTokens(decoded, tables);
-  // Ensure single blank line between blocks
-  normalized = normalized.replace(/\n{3,}/g, "\n\n");
-  return [{ markdown: normalized + "\n" }];
+  const preprocessed = normalizeMacros(storageHtml || "");
+  const { document } = parseHTML(preprocessed);
+  const root = (document.body as any) as Element;
+  const blocks: MappedNode[] = [];
+
+  const nodes = Array.from((root as any).childNodes || []) as any[];
+  for (const node of nodes) {
+    if (!node) continue;
+    // Element nodes
+    if (node.nodeType === 1) {
+      const el = node as Element & { getAttribute?: (name: string) => string | null };
+      const nodeId = el.getAttribute ? el.getAttribute("data-node-id") || undefined : undefined;
+
+      // If this is a table block (or contains a table), render as GFM
+      const tag = String((el as any).tagName || "").toLowerCase();
+      if (tag === "table") {
+        const md = renderTableMarkdown(el);
+        if (md.trim()) blocks.push({ nodeId, markdown: md.trim() });
+        continue;
+      }
+      const tableDesc = (el as any).querySelector ? (el as any).querySelector("table") : null;
+      if (tableDesc) {
+        const md = renderTableMarkdown(tableDesc as Element);
+        if (md.trim()) blocks.push({ nodeId, markdown: md.trim() });
+        continue;
+      }
+
+      // Generic element -> markdown via Turndown and token decode
+      const md = decodeMdCommentTokens(turndown.turndown((el as any).outerHTML || (el as any).textContent || ""));
+      if (md.trim()) {
+        blocks.push({ nodeId, markdown: md.trim() });
+      }
+      continue;
+    }
+
+    // Text nodes (could include macro tokens after normalization)
+    if (node.nodeType === 3) {
+      const t = String((node as any).textContent || "").trim();
+      if (!t) continue;
+      const md = decodeMdCommentTokens(t);
+      if (md.trim()) blocks.push({ markdown: md.trim() });
+      continue;
+    }
+  }
+
+  // Fallback: if no blocks were detected (unexpected), convert entire content
+  // using the previous page-wide pipeline to avoid empty output.
+  if (blocks.length === 0) {
+    // Table tokenization to preserve correct row formatting
+    const tables: string[] = [];
+    const tokenized = preprocessed.replace(/<table[\s\S]*?<\/table>/gi, (match) => {
+      const idx = tables.push(match) - 1;
+      return `MD_TABLE(${idx})`;
+    });
+    // Convert to markdown via turndown
+    const mdRaw = turndown.turndown(tokenized || "");
+    // Decode widget/comment tokens and then replace table tokens to GFM
+    const decoded = decodeMdCommentTokens(mdRaw);
+    let normalized = replaceTableTokens(decoded, tables);
+    // Ensure single blank line between blocks
+    normalized = normalized.replace(/\n{3,}/g, "\n\n");
+    return [{ markdown: normalized + "\n" }];
+  }
+
+  return blocks;
 }
 
 /**
@@ -52,7 +108,8 @@ export function extractHeaderExtrasFromStorage(storageHtml: string, title: strin
   // Emoji: detect shortcode at start of title like :rocket: OR leading unicode emoji
   const emojiShort = title?.match(/^:([a-z0-9_+\-]+):\s*/i);
   if (emojiShort) {
-    out.emoji = emojiShort[1].toLowerCase();
+    const group = emojiShort[1];
+    if (group) out.emoji = group.toLowerCase();
   } else {
     // Leading unicode emoji
     const uni = title?.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
@@ -75,7 +132,7 @@ export function extractHeaderExtrasFromStorage(storageHtml: string, title: strin
   // Status: find status macro and extract colour/color and title params
   const statusBlock = storageHtml.match(/<ac:structured-macro[^>]*\bac:name=["']status["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/i);
   if (statusBlock) {
-    const inner = statusBlock[1];
+    const inner = statusBlock[1] || "";
     const titleParam = inner.match(/<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
     const colourParam = inner.match(/<ac:parameter[^>]*\bac:name=["'](?:colour|color)["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
     const label = (titleParam?.[1] || '').replace(/<[^>]+>/g, '').trim();

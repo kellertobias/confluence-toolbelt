@@ -46,6 +46,14 @@ export class ConfluenceClient {
     };
   }
 
+  private buildV1(pathname: string, query: Record<string, string | number | undefined> = {}): string {
+    const u = new URL("/wiki/rest/api" + pathname, this.base);
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined) u.searchParams.set(k, String(v));
+    }
+    return u.toString();
+  }
+
   private build(pathname: string, query: Record<string, string | number | undefined> = {}): string {
     const u = new URL("/wiki" + pathname, this.base);
     for (const [k, v] of Object.entries(query)) {
@@ -61,6 +69,14 @@ export class ConfluenceClient {
     return res.json();
   }
 
+  async getPageWithUi(pageId: string): Promise<any> {
+    // Try to fetch richer metadata including icon/cover if available
+    const url = this.build(`/api/v2/pages/${pageId}`, { expand: 'icon,coverImage' } as any);
+    const res = await fetch(url, { headers: this.headers });
+    if (!res.ok) return this.getPage(pageId);
+    return res.json();
+  }
+
   async getPageStorage(pageId: string): Promise<{ title: string; storageHtml: string; version: number; spaceId?: string }>
   {
     const url = this.build(`/api/v2/pages/${pageId}`, { "body-format": "storage" });
@@ -70,6 +86,28 @@ export class ConfluenceClient {
     const storageHtml = data?.body?.storage?.value ?? "";
     const version = data?.version?.number ?? 1;
     return { title: data.title, storageHtml, version, spaceId: data.spaceId };
+  }
+
+  async getPageAtlasDoc(pageId: string): Promise<any | undefined> {
+    const url = this.build(`/api/v2/pages/${pageId}`, { "body-format": "atlas_doc_format" });
+    const res = await fetch(url, { headers: this.headers });
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const adf = (data as any)?.body?.atlas_doc_format?.value;
+    try {
+      return typeof adf === 'string' ? JSON.parse(adf) : adf;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async getPageV1Content(pageId: string): Promise<any | undefined> {
+    const url = this.buildV1(`/content/${pageId}`, {
+      expand: "metadata,metadata.properties,body.storage,body.atlas_doc_format,space,version",
+    });
+    const res = await fetch(url, { headers: this.headers });
+    if (!res.ok) return undefined;
+    return res.json();
   }
 
   async updatePageStorage(pageId: string, nextHtml: string, currentVersion: number, title?: string, spaceId?: string): Promise<void> {

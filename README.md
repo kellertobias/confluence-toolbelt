@@ -6,29 +6,6 @@ This tool is completely Vibe coded in an afternoon and might be buggy. Use at yo
 
 ## Usage and Use Cases
 
-### Create Jira Tasks
-
-You can create Jira Tickets in your default board with default fields by:
-
-```
-npx @tobisk/confluence-tools task
-```
-
-This will create a new Jira Ticket in your default board with default fields. Set them via the `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` environment variables. If you don't have a default board, you can set the `JIRA_BOARD_ID` environment variable to the ID of the board you want to use.
-
-For the default fields, you can set them via the `JIRA_DEFAULT_FIELDS` environment variable. It is a JSON string with the field names as keys and the field values as values.
-
-```
-JIRA_DEFAULT_FIELDS='{"summary": "New Task", "description": "New Task Description", "assignee": "your-assignee", "reporter": "your-reporter", "priority": "Medium", "status": "To Do"}'
-```
-
-You can also set the `JIRA_DEFAULT_ASSIGNEE` and `JIRA_DEFAULT_REPORTER` environment variables to the email addresses of the assignee and reporter you want to use. Otherwise the current user will be used.
-
-```
-JIRA_DEFAULT_ASSIGNEE='your-assignee@example.com'
-JIRA_DEFAULT_REPORTER='your-reporter@example.com'
-```
-
 ### AI Assisted Editing/ Offline Editing
 
 To use this tool, simply create a markdown (.md) file in current folder or any subfolder of it. The document must have a header with the following format:
@@ -55,6 +32,32 @@ Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to c
 We will later support an additional command `npx @tobisk/confluence-tools sync` where we internally download the current page content before the upload and provide you with git diffing before the actual upload. For now, we suggest you to manually use git for being sure about your changes. (or `npm run confluence:sync` for development)
 
 You can also create a new page by running `npx @tobisk/confluence-tools create`. This will create a new markdown file in the current folder with the header and the page content. (or `npm run confluence:create` for development)
+
+### Create a Jira Task
+
+Run `npm run confluence:task` to create a new Jira issue (Task) via prompts:
+
+- Title
+- Content (multiline; press Ctrl+Enter to submit)
+- Assign to yourself (default Yes)
+
+Required `.env` variables:
+
+```
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_PROJECT_KEY=ABC
+# Auth: either access token OR basic auth
+JIRA_ACCESS_TOKEN=...
+# or
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=...
+
+# Optional defaults
+JIRA_ISSUE_TYPE=Task
+JIRA_PRIORITY=Medium
+JIRA_LABELS=docs,automation
+JIRA_COMPONENTS=Documentation
+```
 
 ## Markdown Format
 
