@@ -567,10 +567,36 @@ function renderTableMarkdown(tableEl: Element): string {
 
 function getCellTextWithComments(cell: Element): string {
   const anyCell: any = cell as any;
-  const raw = String(anyCell.textContent || "");
-  // Restore inline MD_COMMENT tokens back to HTML comments
-  const restored = raw.replace(/MD_COMMENT\(([^)]+)\)/g, (_m, enc) => `<!-- ${decodeURIComponent(String(enc))} -->`);
-  return restored.trim().replace(/\s+/g, " ");
+  let html = String(anyCell.innerHTML || "");
+  // Extract styling color markers encoded as MD_COMMENT tokens or real comments
+  let styleColor: string | undefined;
+  html = html.replace(/MD_COMMENT\(([^)]+)\)/g, (_m, enc) => {
+    const comment = decodeURIComponent(String(enc));
+    const m = comment.match(/^(?:table|cell):bg:([#a-z0-9_-]+)$/i);
+    if (m) { styleColor = String(m[1]).toLowerCase(); return ""; }
+    // keep non-style comments as tokens for later global decoding
+    return `MD_COMMENT(${encodeURIComponent(comment)})`;
+  });
+  html = html.replace(/<!--\s*(?:table|cell):bg:([#a-z0-9_-]+)\s*-->/gi, (_m, color) => {
+    styleColor = String(color).toLowerCase();
+    return "";
+  });
+  // Convert block/line break tags to newlines, then strip remaining tags
+  html = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h\d)>/gi, "\n");
+  // Remove remaining tags
+  let text = html.replace(/<[^>]+>/g, "");
+  // Decode HTML entities
+  text = decodeBasicEntities(text);
+  // Represent newlines as literal \n
+  text = text.replace(/\r?\n/g, "\\n");
+  // Normalize spaces around, but keep literal \n sequences intact
+  text = text.replace(/[ \t]+/g, " ").trim();
+  if (styleColor) {
+    text = text.length ? `${text} <!-- cell:bg:${styleColor} -->` : `<!-- cell:bg:${styleColor} -->`;
+  }
+  return text;
 }
 
 function decodeBasicEntities(s: string): string {

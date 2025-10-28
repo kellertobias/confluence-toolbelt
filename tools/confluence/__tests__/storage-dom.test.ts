@@ -218,6 +218,41 @@ describe("storageToMarkdownBlocks", () => {
     expect(back).toContain('<ac:structured-macro ac:name="info">');
     expect(back).toContain('<ac:rich-text-body>');
   });
+
+  it("encodes newlines in table cells as \\n in markdown", () => {
+    const html = `
+      <table>
+        <tr>
+          <th>Col</th>
+        </tr>
+        <tr>
+          <td>line1<br/>line2</td>
+        </tr>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(md).toContain("| Col |");
+    expect(md).toContain("| line1\\nline2 |");
+  });
+
+  it("appends cell styling tag and preserves literal \\n in cell content", () => {
+    const html = `
+      <table>
+        <tr><th>Title</th></tr>
+        <tr>
+          <td>first line<!-- table:bg:#ffeeee --></td>
+        </tr>
+        <tr>
+          <td><p>one</p><p>Two</p><!-- cell:bg:yellow --></td>
+        </tr>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    // Styled cell from table:bg
+    expect(md).toContain("| first line <!-- cell:bg:#ffeeee --> |");
+    // Inline newline and explicit cell:bg
+    expect(md).toContain("| one\\nTwo <!-- cell:bg:yellow --> |");
+  });
 });
 
 
