@@ -15,6 +15,7 @@ interface Options { cwd: string; args?: string[] }
 export async function uploadAll(opts: Options): Promise<void> {
   const { args = [] } = opts;
   const all = args.includes("--all");
+  const verbose = args.includes("--verbose");
   const client = fromEnv();
 
   let files: string[] = [];
@@ -34,6 +35,15 @@ export async function uploadAll(opts: Options): Promise<void> {
       });
     }
   }
+  if (verbose) {
+    /**
+     * Print candidate files and selection strategy for transparency when requested.
+     * Why: Speeds up debugging by showing exactly what will be considered for upload.
+     */
+    const rel = files.map((f) => path.relative(opts.cwd, f));
+    console.log(`[upload] Mode=${all ? "all" : "git"} candidates=${rel.length}`);
+    for (const r of rel) console.log(`[upload]   • ${r}`);
+  }
   if (files.length === 0) { console.log("[upload] No candidate files"); return; }
 
   for (const file of files) {
@@ -42,8 +52,21 @@ export async function uploadAll(opts: Options): Promise<void> {
     if (!meta.pageId) { console.log(`[upload] Skip (no pageId): ${file}`); continue; }
 
     const { storageHtml, version, title, spaceId } = await client.getPageStorage(meta.pageId);
-    const effectiveTitle = buildEffectiveTitle(meta.title || title, meta.emoji, meta.status);
+    // Header does not support emoji; keep param reserved for future parity with download extras
+    const effectiveTitle = buildEffectiveTitle(meta.title || title, undefined, meta.status);
     const blocks = parseBlocks(body);
+
+    if (verbose) {
+      /**
+       * Report resolved metadata for the page and the number of content blocks parsed.
+       * How: Show pageId, effective title, space, and block counts to aid troubleshooting.
+       */
+      const rel = path.relative(opts.cwd, file);
+      console.log(`[upload] Preparing ${rel}`);
+      console.log(`[upload]   pageId=${meta.pageId} space=${meta.spaceId || spaceId || "(inherit)"}`);
+      if (effectiveTitle) console.log(`[upload]   title=\"${effectiveTitle}\"`);
+      console.log(`[upload]   blocks=${blocks.length}`);
+    }
 
     // Build replacements for blocks that have nodeId tags (upload only those)
     const replacements: Record<string, string> = {};
@@ -54,17 +77,56 @@ export async function uploadAll(opts: Options): Promise<void> {
     }
 
     if (Object.keys(replacements).length > 0) {
+      if (verbose) {
+        /**
+         * When partial update is possible, show which nodeIds will be replaced.
+         * Why: Helps detect mismatches between local tags and remote document nodes.
+         */
+        const keys = Object.keys(replacements);
+        console.log(`[upload]   partial update: nodeIds=${keys.join(", ")}`);
+      }
       const { html, missing } = replaceNodesById(storageHtml, replacements);
       if (missing.length > 0) {
         console.warn(`[upload] Missing nodeIds on page ${meta.pageId}: ${missing.join(", ")}. Falling back to full update.`);
         const fullHtml = markdownToStorageHtml(body);
+        if (verbose) {
+          const verbosePath = path.join(path.dirname(file), `.${path.basename(file)}.upload.confluence`);
+          try {
+            fs.writeFileSync(verbosePath, fullHtml, "utf8");
+            console.log(`[upload]   wrote verbose outgoing HTML -> ${path.relative(opts.cwd, verbosePath)}`);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(`[upload] Failed to write verbose file: ${path.relative(opts.cwd, verbosePath)}:`, err);
+          }
+        }
         await client.updatePageStorage(meta.pageId, fullHtml, version, effectiveTitle, meta.spaceId || spaceId);
       } else {
+        if (verbose) {
+          const verbosePath = path.join(path.dirname(file), `.${path.basename(file)}.upload.confluence`);
+          try {
+            fs.writeFileSync(verbosePath, html, "utf8");
+            console.log(`[upload]   wrote verbose outgoing HTML -> ${path.relative(opts.cwd, verbosePath)}`);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(`[upload] Failed to write verbose file: ${path.relative(opts.cwd, verbosePath)}:`, err);
+          }
+        }
         await client.updatePageStorage(meta.pageId, html, version, effectiveTitle, meta.spaceId || spaceId);
       }
     } else {
       // No tags -> full page replacement
       const fullHtml = markdownToStorageHtml(body);
+      if (verbose) {
+        console.log("[upload]   no tags detected -> full page update");
+        const verbosePath = path.join(path.dirname(file), `.${path.basename(file)}.upload.confluence`);
+        try {
+          fs.writeFileSync(verbosePath, fullHtml, "utf8");
+          console.log(`[upload]   wrote verbose outgoing HTML -> ${path.relative(opts.cwd, verbosePath)}`);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[upload] Failed to write verbose file: ${path.relative(opts.cwd, verbosePath)}:`, err);
+        }
+      }
       await client.updatePageStorage(meta.pageId, fullHtml, version, effectiveTitle, meta.spaceId || spaceId);
     }
     console.log(`[upload] Updated page ${meta.pageId} from ${path.relative(opts.cwd, file)}`);

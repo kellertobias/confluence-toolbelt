@@ -25,7 +25,7 @@ function printHelp() {
       "",
       "Usage:",
       "  cli download [--force] [--verbose]   # Download all mapped/headered pages",
-      "  cli upload     # Upload changed pages (git-aware)",
+      "  cli upload   [--all] [--verbose]     # Upload changed pages (git-aware)",
       "  cli create     # Create a new page under a parent",
       "  cli task       # Create a Jira task (reads .env defaults)",
       "",

@@ -147,10 +147,10 @@ describe("storageToMarkdownBlocks", () => {
     expect(html).toContain('<td>line1<br/>line2</td>');
   });
 
-  it("converts links, mentions, and blockquotes on upload", () => {
+  it("converts links, mention tags, and blockquotes on upload", () => {
     const md = [
       "> <!-- panel:info:info -->",
-      "> **Bold** text with a [link](https://example.com) and @user mention.",
+      "> **Bold** text with a [link](https://example.com) and <!-- mention:acc-123 User Name -->",
       "",
       "> normal block quote line",
     ].join("\n");
@@ -158,7 +158,7 @@ describe("storageToMarkdownBlocks", () => {
     expect(html).toContain('<ac:structured-macro ac:name="info">');
     expect(html).toContain('<strong>Bold</strong>');
     expect(html).toContain('<a href="https://example.com">link</a>');
-    expect(html).toContain('<ri:user ri:username="user"/>');
+    expect(html).toContain('<ac:atlassian-user ac:account-id="acc-123"/>' );
   });
 
   it("does not escape underscores in download outside code", () => {
@@ -200,15 +200,14 @@ describe("storageToMarkdownBlocks", () => {
     expect(back).toContain('<ac:parameter ac:name="colour">yellow</ac:parameter>');
   });
 
-  it("preserves mention round-trip as @label", () => {
+  it("preserves mention round-trip using mention tag", () => {
     const html = `
       <ac:link><ri:user ri:account-id="abc-123" /></ac:link>
     `;
     const md = storageToMarkdownBlocks(html).map(b => b.markdown.trim()).join("\n");
-    expect(md).toContain("@");
+    expect(md).toContain("<!-- mention:abc-123 ");
     const back = markdownToStorageHtml(md + "\n");
-    // We don't implement upload mention macro; ensure it remains as visible text
-    expect(back).toContain('<p>');
+    expect(back).toContain('<ac:atlassian-user ac:account-id="abc-123"/>' );
   });
 
   it("converts Confluence image with caption to markdown image + caption and back", () => {
@@ -277,6 +276,25 @@ describe("storageToMarkdownBlocks", () => {
     expect(md).toContain("| first line <!-- cell:bg:#ffeeee --> |");
     // Inline newline and explicit cell:bg
     expect(md).toContain("| one\\nTwo <!-- cell:bg:yellow --> |");
+  });
+
+  it("does not escape dots in ordered lists", () => {
+    const html = `
+      <ol>
+        <li>First</li>
+        <li>Second</li>
+      </ol>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(md).toMatch(/\n1\. First/);
+    expect(md).toMatch(/\n2\. Second/);
+    expect(md).not.toContain("1\\.");
+  });
+
+  it("renders horizontal rules as dashed lines", () => {
+    const html = `<hr/>`;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown.trim()).join("\n");
+    expect(out).toBe("-------");
   });
 });
 

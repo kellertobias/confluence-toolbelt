@@ -12,6 +12,20 @@ import { InlineTag } from "./inline-tags.js";
 
 const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
 turndown.use(gfm);
+/**
+ * Override Turndown's default horizontal rule output.
+ *
+ * Why: We want consistent dashed rules in markdown exports from Confluence
+ * download rather than the default spaced asterisks ("* * *"). Use seven
+ * hyphens to avoid accidental setext heading parsing and match internal docs
+ * style.
+ */
+// TypeScript typings for turndown may not expose addRule depending on version;
+// cast to any to access the extension hook safely.
+(turndown as any).addRule("horizontalRuleDash", {
+  filter: "hr",
+  replacement: () => "-------",
+});
 
 export interface MappedNode {
   nodeId?: string;
@@ -283,6 +297,12 @@ export function markdownToStorageHtml(md: string): string {
       i++; continue;
     }
 
+    // Horizontal rule: accept our canonical dashed form (seven hyphens)
+    if (/^\s*-------\s*$/.test(line)) {
+      out.push('<hr/>');
+      i++; continue;
+    }
+
     // Tables
     if (looksLikeTableHeader(lines, i)) {
       const { html, nextIndex } = consumeTable(lines, i);
@@ -294,8 +314,11 @@ export function markdownToStorageHtml(md: string): string {
     const h = line.match(/^(#{1,6})\s+(.+)$/);
     if (h) {
       const level = h[1]?.length;
-      const text = h[2]?.trim();
-      out.push(`<h${level}>${escapeHtml(text || "")}</h${level}>`);
+      const text = h[2]?.trim() || "";
+      let textWithTokens = replaceMentionCommentsWithTokens(text);
+      let html = inlineHtml(textWithTokens);
+      html = replaceMentionTokensWithMacros(html);
+      out.push(`<h${level}>${html}</h${level}>`);
       i++; continue;
     }
 
@@ -324,9 +347,12 @@ export function markdownToStorageHtml(md: string): string {
         ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
         : `<ri:url ri:value="${escapeHtml(src)}"/>`;
       const capHtml = caption ? `<ac:caption>${inlineHtml(caption)}</ac:caption>` : '';
-      // Constrain image display by default for better layout
-      const displayParam = `<ac:parameter ac:name="width">800</ac:parameter>`;
-      out.push(`<ac:image>${displayParam}${body}${capHtml}</ac:image>`);
+      /**
+       * Constrain image display to a maximum width of 500px for readability.
+       * Provide both attribute and parameter forms for broad compatibility.
+       */
+      const displayParam = `<ac:parameter ac:name="width">500</ac:parameter>`;
+      out.push(`<ac:image ac:width="500">${displayParam}${body}${capHtml}</ac:image>`);
       i += caption ? 2 : 1;
       continue;
     }
@@ -345,8 +371,10 @@ export function markdownToStorageHtml(md: string): string {
         body.push((lines[i] || '').replace(/^>\s*/, ''));
         i++;
       }
-      // Join body as markdown text (not HTML)
-      const inner = body.map(escapeHtml).join('\n');
+      // Convert body lines with inline markdown and join with <br/>
+      const inner = body
+        .map(l => replaceMentionTokensWithMacros(inlineHtml(replaceMentionCommentsWithTokens(l))))
+        .join('<br/>');
       if (color === 'panel') {
         out.push(`<ac:structured-macro ac:name="panel"><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
       } else {
@@ -361,6 +389,20 @@ export function markdownToStorageHtml(md: string): string {
       continue;
     }
 
+    // Generic blockquote (without panel tag)
+    if (/^>\s*/.test(line)) {
+      const body: string[] = [];
+      while (i < lines.length && /^>\s*/.test(lines[i] || '')) {
+        body.push((lines[i] || '').replace(/^>\s*/, ''));
+        i++;
+      }
+      const htmlInner = body
+        .map(l => replaceMentionTokensWithMacros(inlineHtml(replaceMentionCommentsWithTokens(l))))
+        .join('<br/>');
+      out.push(`<blockquote>${htmlInner}</blockquote>`);
+      continue;
+    }
+
     // Paragraph (consume until blank line), with inline formatting including links and mentions
     const para: string[] = [];
     while (i < lines.length && !/^\s*$/.test(lines[i] || "")) {
@@ -368,9 +410,12 @@ export function markdownToStorageHtml(md: string): string {
       i++;
     }
     let paraText = para.join(' ').trim();
-    // Convert @Username into Confluence mention link if pattern matches @word characters
-    paraText = paraText.replace(/(^|\s)@([A-Za-z0-9_.-]+)/g, (_m, space, user) => `${space}<ac:link><ri:user ri:username="${escapeHtml(user)}"/></ac:link>`);
-    out.push(`<p>${inlineHtml(paraText)}</p>`);
+    // First, convert any mention comment tags to durable tokens so inlineHtml doesn't escape them
+    paraText = replaceMentionCommentsWithTokens(paraText);
+    let html = inlineHtml(paraText);
+    // After inline formatting, render durable mention tokens into Confluence macros
+    html = replaceMentionTokensWithMacros(html);
+    out.push(`<p>${html}</p>`);
   }
   return out.join("");
 }
@@ -427,26 +472,93 @@ function cellHtml(cell: string): string {
   let m: RegExpExecArray | null;
   while ((m = re.exec(cell)) !== null) {
     const pre = cell.slice(last, m.index);
-    if (pre) segments.push(escapeHtml(pre).replace(/\\n/g, '<br/>'));
-    segments.push(m[0]);
+    if (pre) segments.push(replaceMentionTokensWithMacros(inlineHtml(pre)).replace(/\\n/g, '<br/>'));
+    // Convert mention comments within cells into durable tokens directly
+    const convertedComment = replaceMentionCommentsWithTokens(m[0]);
+    segments.push(convertedComment);
     last = m.index + m[0]?.length;
   }
   const tail = cell.slice(last);
-  if (tail) segments.push(escapeHtml(tail).replace(/\\n/g, '<br/>'));
+  if (tail) segments.push(replaceMentionTokensWithMacros(inlineHtml(tail)).replace(/\\n/g, '<br/>'));
   let out = segments.join('');
+  // Finally, render any durable mention tokens into Confluence macros
+  out = replaceMentionTokensWithMacros(out);
   // Trim trailing <br/> that may come from markdown literal \n at the end of cell
   out = out.replace(/(?:<br\/>\s*)+$/i, '');
-  return out;
+  // Confluence expects inline content inside <p> within table cells for proper rendering
+  const trimmed = out.trim();
+  if (!trimmed) return '';
+  if (/^<p[>\s]/i.test(trimmed)) return trimmed;
+  return `<p>${out}</p>`;
 }
 
 function inlineHtml(s: string): string {
-  // Minimal inline markdown to HTML: bold **text** and inline code `code`.
-  // Escape raw first, then re-inject code/bold/links.
-  const escaped = escapeHtml(s);
-  const withCode = escaped.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
-  const withBold = withCode.replace(/\*\*([^*]+)\*\*/g, (_m, inner) => `<strong>${inner}</strong>`);
-  const withLinks = withBold.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `<a href="${escapeHtml(String(href))}">${text}</a>`);
-  return withLinks;
+  // Minimal inline markdown to HTML: code, bold, links
+  // Protect escaped asterisks so they remain literal and are not interpreted as formatting
+  // We replace them with a durable token during processing and restore at the end.
+  let out = String(s).replace(/\\\*/g, 'MD_ESC_STAR');
+  // Escape raw HTML next
+  out = escapeHtml(out);
+  // Inline images ![alt](src) → Confluence image with 500px width
+  out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt, href) => {
+    const src = String(href || "");
+    const body = src.startsWith('#')
+      ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
+      : `<ri:url ri:value="${escapeHtml(src)}"/>`;
+    const widthParam = `<ac:parameter ac:name="width">500</ac:parameter>`;
+    return `<ac:image ac:width="500">${widthParam}${body}</ac:image>`;
+  });
+  // Code spans
+  out = out.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
+  // Bold
+  out = out.replace(/\*\*([^*]+)\*\*/g, (_m, inner) => `<strong>${inner}</strong>`);
+  // Links
+  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `<a href="${escapeHtml(String(href))}">${text}</a>`);
+  // Restore literal asterisks
+  out = out.replace(/MD_ESC_STAR/g, '*');
+  return out;
+}
+
+// Phase 1: Replace mention HTML comments with durable tokens to avoid escaping during inline conversion
+function replaceMentionCommentsWithTokens(s: string): string {
+  return s.replace(/<!--\s*mention:([^\s>]+)\s+([\s\S]*?)\s*-->/g, (_m, idRaw, labelRaw) => {
+    const id = String(idRaw || "");
+    const label = String(labelRaw || "");
+    const accountId = selectAccountId(id, label);
+    const encId = encodeURIComponent(accountId);
+    // Keep optional visible label for round-trip symmetry (not required for upload)
+    return `MD_MENTION(${encId})`;
+  });
+}
+
+// Phase 2: Render durable mention tokens as Confluence user mention macros
+function replaceMentionTokensWithMacros(s: string): string {
+  // Support both bare MD_MENTION(id) and MD_MENTION(id)[label] forms
+  return s
+    .replace(/MD(?:\\)?_MENTION\(([^)]+)\)(?:\\)?\[[^\]]*\]/g, (_m, encId) => {
+      const accountId = decodeURIComponent(String(encId || ""));
+      // Confluence Cloud mention storage format
+      return `<ac:link><ri:user ri:account-id="${escapeHtml(accountId)}"/></ac:link>`;
+    })
+    .replace(/MD(?:\\)?_MENTION\(([^)]+)\)/g, (_m, encId) => {
+      const accountId = decodeURIComponent(String(encId || ""));
+      return `<ac:link><ri:user ri:account-id="${escapeHtml(accountId)}"/></ac:link>`;
+    });
+}
+
+// Heuristic to select the correct Atlassian account ID from compound inputs like "siteId:accountId"
+function selectAccountId(id: string, label: string): string {
+  const candidates: string[] = [];
+  const add = (v?: string) => { if (v && !candidates.includes(v)) candidates.push(v); };
+  add(id);
+  add(label);
+  add(id.split(':').pop() || id);
+  add(label.split(':').pop() || label);
+  // Prefer UUID-looking tokens first
+  const uuid = candidates.find((c) => /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(c));
+  if (uuid) return uuid;
+  // Otherwise pick the last segment of id as a reasonable default
+  return id.split(':').pop() || id;
 }
 
 function escapeHtml(s: string): string {
@@ -648,8 +760,9 @@ function decodeMdCommentTokens(s: string): string {
     .replace(/MD(?:\\)?_MENTION\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, idEnc, visEnc) => {
       const id = decodeURIComponent(String(idEnc || ""));
       const vis = decodeURIComponent(String(visEnc || ""));
-      const label = vis || `@${id}`;
-      return `@${label}`;
+      const label = vis || id;
+      // Emit single mention tag in requested format
+      return `<!-- mention:${id} ${label} -->`;
     })
     // Emit code blocks using fenced style ```lang\n...\n```
     .replace(/MD(?:\\)?_CODE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, langEnc, bodyEnc) => {
@@ -670,6 +783,8 @@ function unescapeMarkdownUnderscores(md: string): string {
   // Step 2: collapse any remaining multiple backslashes before '_' to a single backslash
   // This ensures sequences like \\_ become \_
   out = out.replace(/\\{2,}_/g, "\\_");
+  // Step 3: unescape numbered-list leaders like "1\. " at start of line → "1. "
+  out = out.replace(/^(\s*\d+)\\\./gm, '$1.');
   return out;
 }
 
