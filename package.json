@@ -13,7 +13,6 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "@telefonica/markdown-confluence-sync": "^2.2.0",
     "@types/node": "^22.7.5",
     "dotenv": "^16.4.5",
     "tsx": "^4.19.2",
@@ -22,8 +21,8 @@
   },
   "dependencies": {
     "enquirer": "^2.4.1",
-    "linkedom": "^0.18.7",
     "jsdom": "^25.0.1",
+    "linkedom": "^0.18.7",
     "markdown-it": "^14.1.0",
     "simple-git": "^3.27.0",
     "turndown": "^7.1.2",

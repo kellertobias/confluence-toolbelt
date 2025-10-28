@@ -343,16 +343,20 @@ export function markdownToStorageHtml(md: string): string {
       // Peek next line for caption if present and not blank
       const next = lines[i + 1] || "";
       const caption = /^\s*$/.test(next) ? "" : next.trim();
+      // Prefer explicit caption line, else fall back to alt text as caption
+      const captionOrAlt = caption || alt;
       const body = src.startsWith('#')
         ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
         : `<ri:url ri:value="${escapeHtml(src)}"/>`;
-      const capHtml = caption ? `<ac:caption>${inlineHtml(caption)}</ac:caption>` : '';
+      const capHtml = captionOrAlt ? `<ac:caption>${inlineHtml(captionOrAlt)}</ac:caption>` : '';
       /**
        * Constrain image display to a maximum width of 500px for readability.
-       * Provide both attribute and parameter forms for broad compatibility.
+       * Provide both attribute and parameter forms for broad compatibility,
+       * and center images for better visual balance.
        */
       const displayParam = `<ac:parameter ac:name="width">500</ac:parameter>`;
-      out.push(`<ac:image ac:width="500">${displayParam}${body}${capHtml}</ac:image>`);
+      const alignParam = `<ac:parameter ac:name="align">center</ac:parameter>`;
+      out.push(`<ac:image ac:width="500" ac:align="center">${displayParam}${alignParam}${body}${capHtml}</ac:image>`);
       i += caption ? 2 : 1;
       continue;
     }
@@ -506,7 +510,9 @@ function inlineHtml(s: string): string {
       ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
       : `<ri:url ri:value="${escapeHtml(src)}"/>`;
     const widthParam = `<ac:parameter ac:name="width">500</ac:parameter>`;
-    return `<ac:image ac:width="500">${widthParam}${body}</ac:image>`;
+    const alignParam = `<ac:parameter ac:name="align">center</ac:parameter>`;
+    const capHtml = alt ? `<ac:caption>${inlineHtml(String(alt))}</ac:caption>` : '';
+    return `<ac:image ac:width="500" ac:align="center">${widthParam}${alignParam}${body}${capHtml}</ac:image>`;
   });
   // Code spans
   out = out.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
@@ -783,9 +789,35 @@ function unescapeMarkdownUnderscores(md: string): string {
   // Step 2: collapse any remaining multiple backslashes before '_' to a single backslash
   // This ensures sequences like \\_ become \_
   out = out.replace(/\\{2,}_/g, "\\_");
-  // Step 3: unescape numbered-list leaders like "1\. " at start of line → "1. "
+  // Step 3: for asterisks, collapse multiple backslashes before '*' to a single backslash (avoid multiplying on round-trips)
+  out = out.replace(/\\{2,}\*/g, "\\*");
+  // Step 4: unescape numbered-list leaders like "1\. " at start of line → "1. "
   out = out.replace(/^(\s*\d+)\\\./gm, '$1.');
+  // Step 5: inside code regions (inline `code` and fenced ``` blocks), remove escapes before '*'
+  out = unescapeAsterisksInsideCode(out);
   return out;
+}
+
+/**
+ * Remove escapes for asterisks inside markdown code regions.
+ * Why: In code (inline or fenced), '*' is literal and does not need escaping; keeping
+ * backslashes creates noisy round-trips where they accumulate.
+ */
+function unescapeAsterisksInsideCode(markdown: string): string {
+  let processed = markdown;
+  // Fenced code blocks ```lang?\n...\n```
+  processed = processed.replace(/```[^\n]*\n[\s\S]*?```/g, (block) => {
+    const m = block.match(/^(```[^\n]*\n)([\s\S]*?)(\n```)?$/);
+    if (!m) return block.replace(/\\\*/g, '*');
+    const prefix = m[1] || '';
+    const body = m[2] || '';
+    const suffix = m[3] || '';
+    const normalizedBody = body.replace(/\\\*/g, '*');
+    return prefix + normalizedBody + suffix;
+  });
+  // Inline code `...`
+  processed = processed.replace(/`[^`]*`/g, (span) => span.replace(/\\\*/g, '*'));
+  return processed;
 }
 
 function replaceTableTokens(markdown: string, tables: string[]): string {
