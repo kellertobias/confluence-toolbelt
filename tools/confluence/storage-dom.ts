@@ -315,9 +315,12 @@ export function markdownToStorageHtml(md: string): string {
     if (h) {
       const level = h[1]?.length;
       const text = h[2]?.trim() || "";
-      let textWithTokens = replaceMentionCommentsWithTokens(text);
+      // Convert special comment wrappers and mentions to durable tokens first
+      let textWithTokens = replaceCommentWrapperCommentsWithTokens(replaceMentionCommentsWithTokens(text));
       let html = inlineHtml(textWithTokens);
+      // After inline formatting, render durable mention tokens and wrap comment ranges
       html = replaceMentionTokensWithMacros(html);
+      html = wrapCommentTokenRangesToInlineMarkers(html);
       out.push(`<h${level}>${html}</h${level}>`);
       i++; continue;
     }
@@ -377,17 +380,22 @@ export function markdownToStorageHtml(md: string): string {
       }
       // Convert body lines with inline markdown and join with <br/>
       const inner = body
-        .map(l => replaceMentionTokensWithMacros(inlineHtml(replaceMentionCommentsWithTokens(l))))
+        .map(l => {
+          const withTokens = replaceCommentWrapperCommentsWithTokens(replaceMentionCommentsWithTokens(l));
+          const htmlLine = inlineHtml(withTokens);
+          return replaceMentionTokensWithMacros(htmlLine);
+        })
         .join('<br/>');
+      const innerWithComments = wrapCommentTokenRangesToInlineMarkers(inner);
       if (color === 'panel') {
-        out.push(`<ac:structured-macro ac:name="panel"><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
+        out.push(`<ac:structured-macro ac:name="panel"><ac:rich-text-body>${innerWithComments}</ac:rich-text-body></ac:structured-macro>`);
       } else {
         // Map common colors to known macros where applicable, else use panel with bgColor
         const known = ['info','note','warning','tip','success','error'];
         if (known.includes(color)) {
-          out.push(`<ac:structured-macro ac:name="${color}"><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
+          out.push(`<ac:structured-macro ac:name="${color}"><ac:rich-text-body>${innerWithComments}</ac:rich-text-body></ac:structured-macro>`);
         } else {
-          out.push(`<ac:structured-macro ac:name="panel"><ac:parameter ac:name="bgColor">${escapeHtml(color)}</ac:parameter><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
+          out.push(`<ac:structured-macro ac:name="panel"><ac:parameter ac:name="bgColor">${escapeHtml(color)}</ac:parameter><ac:rich-text-body>${innerWithComments}</ac:rich-text-body></ac:structured-macro>`);
         }
       }
       continue;
@@ -401,9 +409,13 @@ export function markdownToStorageHtml(md: string): string {
         i++;
       }
       const htmlInner = body
-        .map(l => replaceMentionTokensWithMacros(inlineHtml(replaceMentionCommentsWithTokens(l))))
+        .map(l => {
+          const withTokens = replaceCommentWrapperCommentsWithTokens(replaceMentionCommentsWithTokens(l));
+          const htmlLine = inlineHtml(withTokens);
+          return replaceMentionTokensWithMacros(htmlLine);
+        })
         .join('<br/>');
-      out.push(`<blockquote>${htmlInner}</blockquote>`);
+      out.push(`<blockquote>${wrapCommentTokenRangesToInlineMarkers(htmlInner)}</blockquote>`);
       continue;
     }
 
@@ -414,11 +426,12 @@ export function markdownToStorageHtml(md: string): string {
       i++;
     }
     let paraText = para.join(' ').trim();
-    // First, convert any mention comment tags to durable tokens so inlineHtml doesn't escape them
-    paraText = replaceMentionCommentsWithTokens(paraText);
+    // First, convert any comment wrapper and mention tags to durable tokens so inlineHtml doesn't escape them
+    paraText = replaceCommentWrapperCommentsWithTokens(replaceMentionCommentsWithTokens(paraText));
     let html = inlineHtml(paraText);
-    // After inline formatting, render durable mention tokens into Confluence macros
+    // After inline formatting, render durable tokens and wrap comment ranges
     html = replaceMentionTokensWithMacros(html);
+    html = wrapCommentTokenRangesToInlineMarkers(html);
     out.push(`<p>${html}</p>`);
   }
   return out.join("");
@@ -477,16 +490,17 @@ function cellHtml(cell: string): string {
   while ((m = re.exec(cell)) !== null) {
     const pre = cell.slice(last, m.index);
     if (pre) segments.push(replaceMentionTokensWithMacros(inlineHtml(pre)).replace(/\\n/g, '<br/>'));
-    // Convert mention comments within cells into durable tokens directly
-    const convertedComment = replaceMentionCommentsWithTokens(m[0]);
+    // Convert mention/comment wrapper comments within cells into durable tokens directly
+    const convertedComment = replaceCommentWrapperCommentsWithTokens(replaceMentionCommentsWithTokens(m[0]));
     segments.push(convertedComment);
     last = m.index + m[0]?.length;
   }
   const tail = cell.slice(last);
   if (tail) segments.push(replaceMentionTokensWithMacros(inlineHtml(tail)).replace(/\\n/g, '<br/>'));
   let out = segments.join('');
-  // Finally, render any durable mention tokens into Confluence macros
+  // Finally, render any durable mention/comment tokens into Confluence macros
   out = replaceMentionTokensWithMacros(out);
+  out = wrapCommentTokenRangesToInlineMarkers(out);
   // Trim trailing <br/> that may come from markdown literal \n at the end of cell
   out = out.replace(/(?:<br\/>\s*)+$/i, '');
   // Confluence expects inline content inside <p> within table cells for proper rendering
@@ -537,6 +551,21 @@ function replaceMentionCommentsWithTokens(s: string): string {
   });
 }
 
+/**
+ * Replace our markdown comment wrappers with durable tokens.
+ *
+ * Input examples:
+ *   <!-- comment:c1 -->
+ *   <!-- commend-end:c1 -->
+ * Output durable tokens:
+ *   MD_CMT_START(encodeURIComponent(id)) / MD_CMT_END(encodeURIComponent(id))
+ */
+function replaceCommentWrapperCommentsWithTokens(s: string): string {
+  return s
+    .replace(/<!--\s*comment:([^\s>]+)\s*-->/g, (_m, id) => `MD_CMT_START(${encodeURIComponent(String(id || ''))})`)
+    .replace(/<!--\s*commend-end:([^\s>]+)\s*-->/g, (_m, id) => `MD_CMT_END(${encodeURIComponent(String(id || ''))})`);
+}
+
 // Phase 2: Render durable mention tokens as Confluence user mention macros
 function replaceMentionTokensWithMacros(s: string): string {
   // Support both bare MD_MENTION(id) and MD_MENTION(id)[label] forms
@@ -550,6 +579,44 @@ function replaceMentionTokensWithMacros(s: string): string {
       const accountId = decodeURIComponent(String(encId || ""));
       return `<ac:link><ri:user ri:account-id="${escapeHtml(accountId)}"/></ac:link>`;
     });
+}
+
+/**
+ * Replace durable inline comment tokens with Confluence inline comment macros.
+ *
+ * Why: We wrap commented ranges during markdown editing using HTML comments
+ * like <!-- comment:ID --> ... <!-- commend-end:ID -->. On upload, we need to
+ * translate those durable MD_CMT_* tokens into Confluence storage macros so the
+ * commented ranges are preserved in Confluence.
+ */
+function replaceCommentTokensWithMacros(_s: string): string {
+  // Deprecated: we now prefer paired inline markers, keep as fallback if ever needed
+  return _s;
+}
+
+/**
+ * Wrap MD_CMT_START(id) ... MD_CMT_END(id) spans into a single inline marker element.
+ *
+ * How: Replace balanced pairs with <ac:inline-comment-marker ac:ref="id">innerHTML</ac:inline-comment-marker>.
+ * Handles multiple pairs per string and ignores mismatched pairs.
+ */
+function wrapCommentTokenRangesToInlineMarkers(s: string): string {
+  let out = s;
+  // Replace repeatedly until no more pairs found (supports multiple ranges)
+  // Use non-greedy inner to keep shortest span for the same id
+  const pairRe = /MD(?:\\)?_CMT_START\(([^)]+)\)([\s\S]*?)MD(?:\\)?_CMT_END\(\1\)/g;
+  let prev: string | undefined;
+  do {
+    prev = out;
+    out = out.replace(pairRe, (_m, encId, inner) => {
+      const id = decodeURIComponent(String(encId || ""));
+      return `<ac:inline-comment-marker ac:ref="${escapeHtml(id)}">${inner}</ac:inline-comment-marker>`;
+    });
+  } while (out !== prev);
+  // Drop any stray start/end tokens that might remain (unbalanced cases)
+  out = out.replace(/MD(?:\\)?_CMT_START\(([^)]+)\)/g, "");
+  out = out.replace(/MD(?:\\)?_CMT_END\(([^)]+)\)/g, "");
+  return out;
 }
 
 // Heuristic to select the correct Atlassian account ID from compound inputs like "siteId:accountId"
@@ -655,6 +722,32 @@ function normalizeMacros(html: string): string {
   out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi, () => 'MD_WIDGET(toc)');
   // Also handle self-closing TOC macro tags (e.g., <ac:structured-macro ac:name="toc" />)
   out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*\/>/gi, () => 'MD_WIDGET(toc)');
+  // Inline comment markers → durable tokens preserving the ref id. Handle both structured-macro and inline element forms.
+  out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']inline-comment-marker["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi, (_m, inner) => {
+    const innerStr = String(inner || '');
+    const ref = (innerStr.match(/<ac:parameter[^>]*\bac:name=["']ref["'][^>]*>([\s\S]*?)<\/ac:parameter>/i)?.[1] || '').replace(/<[^>]+>/g, '').trim();
+    const endParam = (innerStr.match(/<ac:parameter[^>]*\bac:name=["'](?:end|isEnd|endMarker|type)["'][^>]*>([\s\S]*?)<\/ac:parameter>/i)?.[1] || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
+    const isEnd = endParam === 'true' || endParam === '1' || endParam === 'end';
+    const enc = encodeURIComponent(ref);
+    return isEnd ? `MD_CMT_END(${enc})` : `MD_CMT_START(${enc})`;
+  });
+  out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']inline-comment-end["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi, (_m, inner) => {
+    const ref = (String(inner || '').match(/<ac:parameter[^>]*\bac:name=["']ref["'][^>]*>([\s\S]*?)<\/ac:parameter>/i)?.[1] || '').replace(/<[^>]+>/g, '').trim();
+    const enc = encodeURIComponent(ref);
+    return `MD_CMT_END(${enc})`;
+  });
+  // Handle paired inline forms like <ac:inline-comment-marker ac:ref="...">TEXT</ac:inline-comment-marker>
+  out = out.replace(/<ac:inline-comment-marker[^>]*\bac:ref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/ac:inline-comment-marker>/gi, (_m, ref, inner) => {
+    const enc = encodeURIComponent(String(ref || ''));
+    return `MD_CMT_START(${enc})${inner}MD_CMT_END(${enc})`;
+  });
+  // Also handle potential inline self-closing/opening forms like <ac:inline-comment-marker ac:ref="..."/>
+  out = out.replace(/<ac:inline-comment-marker[^>]*\bac:ref=["']([^"']+)["'][^>]*\/?>(?:<\/ac:inline-comment-marker>)?/gi, (m, ref) => {
+    const isEnd = /\bac:(?:is-)?end=["']?(?:true|1)["']?/i.test(m) || /\bac:type=["']end["']/i.test(m);
+    const enc = encodeURIComponent(String(ref || ''));
+    return isEnd ? `MD_CMT_END(${enc})` : `MD_CMT_START(${enc})`;
+  });
+  out = out.replace(/<ac:inline-comment-end[^>]*\bac:ref=["']([^"']+)["'][^>]*\/?>(?:<\/ac:inline-comment-end>)?/gi, (_m, ref) => `MD_CMT_END(${encodeURIComponent(String(ref || ''))})`);
   // Unwrap any remaining Confluence ac:* tags by stripping the tag wrappers but keeping inner content
   out = out.replace(/<ac:[^>]+>/gi, "");
   out = out.replace(/<\/ac:[^>]+>/gi, "");
@@ -735,9 +828,12 @@ function decodeBasicEntities(s: string): string {
 }
 
 function decodeMdCommentTokens(s: string): string {
-  return s
+  let out = s
     .replace(/MD(?:\\)?_COMMENT\(([^)]+)\)/g, (_m, enc) => `<!-- ${decodeURIComponent(String(enc))} -->`)
     .replace(/MD(?:\\)?_WIDGET\(([^)]+)\)/g, (_m, name) => `<!-- widget:${String(name).toUpperCase()} -->`)
+    // Inline comment start/end markers to markdown wrapper comments
+    .replace(/MD(?:\\)?_CMT_START\(([^)]+)\)/g, (_m, enc) => `<!-- comment:${decodeURIComponent(String(enc || ''))} -->`)
+    .replace(/MD(?:\\)?_CMT_END\(([^)]+)\)/g, (_m, enc) => `<!-- commend-end:${decodeURIComponent(String(enc || ''))} -->`)
     
     .replace(/MD(?:\\)?_PANEL\(([^,)]*),([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, colorEnc, iconEnc, bodyEnc) => {
       const color = decodeURIComponent(String(colorEnc || "")) || "info";
@@ -777,6 +873,13 @@ function decodeMdCommentTokens(s: string): string {
       const fence = '```' + (lang ? String(lang) : '');
       return `${fence}\n${body}\n\`\`\``;
     });
+
+  // Normalize spacing around comment wrappers so they don't glue to words
+  out = out
+    .replace(/(\S)<!--\s*comment:/g, '$1 <!-- comment:')
+    .replace(/(\S)<!--\s*commend-end:/g, '$1 <!-- commend-end:')
+    .replace(/-->\s*(\S)/g, '--> $1');
+  return out;
 }
 
 /**

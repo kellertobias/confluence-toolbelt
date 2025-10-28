@@ -6,6 +6,8 @@ This tool is completely Vibe coded in an afternoon and might be buggy. Use at yo
 
 ## Usage and Use Cases
 
+Initialize your local environment by running `npx @tobisk/confluence-tools init`. This will create a .env file in the current folder with the required variables and some comments what they are required for.
+
 ### AI Assisted Editing/ Offline Editing
 
 To use this tool, simply create a markdown (.md) file in current folder or any subfolder of it. The document must have a header with the following format:

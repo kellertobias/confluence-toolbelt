@@ -1,8 +1,21 @@
 {
-  "name": "docs",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "@tobisk/confluence-tools",
+  "version": "0.0.0-development",
+  "type": "module",
+  "main": "dist/tools/confluence/cli.js",
+  "bin": {
+    "confluence-tools": "dist/tools/confluence/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "confluence:init": "tsx tools/confluence/cli.ts init",
     "confluence:download": "tsx tools/confluence/cli.ts download",
     "confluence:upload": "tsx tools/confluence/cli.ts upload",
     "confluence:create": "tsx tools/confluence/cli.ts create",
@@ -10,11 +23,22 @@
     "test:unit": "vitest run"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "description": "",
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "@types/node": "^22.7.5",
     "dotenv": "^16.4.5",
+    "semantic-release": "^24.0.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^10.3.5",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/release-notes-generator": "^14.0.1",
+    "@semantic-release/exec": "^6.0.3",
+    "conventional-changelog-conventionalcommits": "^7.0.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^2.1.9"
@@ -27,5 +51,14 @@
     "simple-git": "^3.27.0",
     "turndown": "^7.1.2",
     "turndown-plugin-gfm": "^1.0.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "confluence:init": "tsx tools/confluence/cli.ts init",
+    "confluence:download": "tsx tools/confluence/cli.ts download",
+    "confluence:upload": "tsx tools/confluence/cli.ts upload",
+    "confluence:create": "tsx tools/confluence/cli.ts create",
+    "confluence:task": "tsx tools/confluence/cli.ts task",
+    "test:unit": "vitest run"
   }
 }

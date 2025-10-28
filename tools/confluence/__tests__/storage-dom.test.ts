@@ -299,3 +299,32 @@ describe("storageToMarkdownBlocks", () => {
 });
 
 
+describe("inline comment wrapper round-trip", () => {
+  it("wraps commented ranges in markdown on download", () => {
+    const html = `
+      <p>
+        <ac:structured-macro ac:name="inline-comment-marker">
+          <ac:parameter ac:name="ref">cmt-123</ac:parameter>
+        </ac:structured-macro>
+        Hello
+        <ac:structured-macro ac:name="inline-comment-marker">
+          <ac:parameter ac:name="ref">cmt-123</ac:parameter>
+          <ac:parameter ac:name="end">true</ac:parameter>
+        </ac:structured-macro>
+      </p>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown.trim()).join("\n");
+    expect(md).toContain("<!-- comment:cmt-123 -->");
+    expect(md).toContain("Hello");
+    expect(md).toContain("<!-- commend-end:cmt-123 -->");
+  });
+
+  it("reconstructs inline comment markers on upload", () => {
+    const md = `This is <!-- comment:cmt-42 -->important<!-- commend-end:cmt-42 --> text.`;
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:inline-comment-marker');
+    expect(html).toContain('ac:ref="cmt-42"');
+    expect(html).toContain('>important<');
+  });
+});
+

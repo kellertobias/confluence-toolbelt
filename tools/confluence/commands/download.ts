@@ -58,9 +58,14 @@ export async function downloadAll(opts: Options): Promise<void> {
     }
 
     const blocks = storageToMarkdownBlocks(storageHtml);
-    const body = blocks
+    // Join blocks and apply a final token decode pass for any durable tokens that might
+    // have survived the per-block decoding (defensive against edge conversions)
+    let body = blocks
       .map((b) => (b.nodeId ? emitTag({ tagType: "content", nodeId: b.nodeId }) : "") + b.markdown + "\n")
       .join("\n");
+    body = body
+      .replace(/MD(?:\\)?_CMT_START\(([^)]+)\)/g, (_m, enc) => `<!-- comment:${decodeURIComponent(String(enc || ''))} -->`)
+      .replace(/MD(?:\\)?_CMT_END\(([^)]+)\)/g, (_m, enc) => `<!-- commend-end:${decodeURIComponent(String(enc || ''))} -->`);
     // Preserve optional header fields (emoji/status/image) from existing file header if present
     const existingText = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
     const existingHeader = parseHeader(existingText).meta;
