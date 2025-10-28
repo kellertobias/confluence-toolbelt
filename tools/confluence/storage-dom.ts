@@ -57,7 +57,9 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
       }
 
       // Generic element -> markdown via Turndown and token decode
-      const md = decodeMdCommentTokens(turndown.turndown((el as any).outerHTML || (el as any).textContent || ""));
+      const md = unescapeMarkdownUnderscores(
+        decodeMdCommentTokens(turndown.turndown((el as any).outerHTML || (el as any).textContent || ""))
+      );
       if (md.trim()) {
         blocks.push({ nodeId, markdown: md.trim() });
       }
@@ -68,7 +70,7 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
     if (node.nodeType === 3) {
       const t = String((node as any).textContent || "").trim();
       if (!t) continue;
-      const md = decodeMdCommentTokens(t);
+      const md = unescapeMarkdownUnderscores(decodeMdCommentTokens(t));
       if (md.trim()) blocks.push({ markdown: md.trim() });
       continue;
     }
@@ -88,6 +90,8 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
     // Decode widget/comment tokens and then replace table tokens to GFM
     const decoded = decodeMdCommentTokens(mdRaw);
     let normalized = replaceTableTokens(decoded, tables);
+    // Remove unnecessary underscore escaping outside code regions
+    normalized = unescapeMarkdownUnderscores(normalized);
     // Ensure single blank line between blocks
     normalized = normalized.replace(/\n{3,}/g, "\n\n");
     return [{ markdown: normalized + "\n" }];
@@ -221,6 +225,56 @@ export function markdownToStorageHtml(md: string): string {
     const line = lines[i];
     if (!line || /^\s*$/.test(line)) { i++; continue; }
 
+    // Inline status tag <!-- status:color:Title -->
+    const statusTag = line.match(/^\s*<!--\s*status:([^:>]+):\s*([^>]+)\s*-->\s*$/i);
+    if (statusTag) {
+      const color = (statusTag[1] || '').trim();
+      const title = (statusTag[2] || '').trim();
+      out.push(`<ac:structured-macro ac:name="status"><ac:parameter ac:name="title">${escapeHtml(title)}</ac:parameter><ac:parameter ac:name="colour">${escapeHtml(color)}</ac:parameter></ac:structured-macro>`);
+      i++; continue;
+    }
+
+    // Fenced code blocks ```lang? ... ```
+    const codeFence = line.match(/^```(?<lang>[A-Za-z0-9_+\-]*)\s*$/);
+    if (codeFence) {
+      const lang = (codeFence.groups?.lang || "").trim();
+      i++;
+      const body: string[] = [];
+      while (i < lines.length && !/^```\s*$/.test(lines[i] || "")) {
+        body.push(lines[i] || "");
+        i++;
+      }
+      // Skip closing fence if present
+      if (i < lines.length && /^```\s*$/.test(lines[i] || "")) i++;
+      const codeText = body.join("\n");
+      const langParam = lang ? `<ac:parameter ac:name="language">${escapeHtml(lang)}</ac:parameter>` : '';
+      // Prefer CDATA unless it contains ']]>' which would prematurely close it; fallback to escaped text
+      const codeBody = codeText.includes("]]>")
+        ? `<ac:plain-text-body>${escapeHtml(codeText)}</ac:plain-text-body>`
+        : `<ac:plain-text-body><![CDATA[${codeText}]]></ac:plain-text-body>`;
+      out.push(
+        `<ac:structured-macro ac:name="code">${langParam}${codeBody}</ac:structured-macro>`
+      );
+      continue;
+    }
+
+    // Indented code blocks (four or more leading spaces). Consume contiguous block.
+    if (/^ {4,}\S/.test(line)) {
+      const body: string[] = [];
+      while (i < lines.length && (/^ {4,}/.test(lines[i] || "") || /^\s*$/.test(lines[i] || ""))) {
+        const raw = lines[i] || "";
+        if (/^\s*$/.test(raw)) { body.push(""); i++; continue; }
+        body.push(raw.replace(/^ {4}/, ""));
+        i++;
+      }
+      const codeText = body.join("\n");
+      const codeBody = codeText.includes("]]>")
+        ? `<ac:plain-text-body>${escapeHtml(codeText)}</ac:plain-text-body>`
+        : `<ac:plain-text-body><![CDATA[${codeText}]]></ac:plain-text-body>`;
+      out.push(`<ac:structured-macro ac:name="code">${codeBody}</ac:structured-macro>`);
+      continue;
+    }
+
     // Widgets
     const widget = line.match(/^\s*<!--\s*widget:([A-Za-z0-9_-]+)\s*-->\s*$/i);
     if (widget) {
@@ -245,13 +299,73 @@ export function markdownToStorageHtml(md: string): string {
       i++; continue;
     }
 
-    // Paragraph (consume until blank line)
+    // Unordered lists (- or *). Parse minimal structure and emit <ul><li>...
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i] || "")) {
+        const itemText = (lines[i] || "").replace(/^\s*[-*]\s+/, "");
+        items.push(`<li>${inlineHtml(itemText)}</li>`);
+        i++;
+      }
+      out.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    // Image with optional caption: expect either markdown image followed by caption line,
+    // or a simple figure-like syntax. We'll handle markdown image + next non-empty as caption.
+    const imgLine = line.match(/^!\[(.*?)\]\((.*?)\)\s*$/);
+    if (imgLine) {
+      const alt = imgLine[1] || "";
+      const src = imgLine[2] || "";
+      // Peek next line for caption if present and not blank
+      const next = lines[i + 1] || "";
+      const caption = /^\s*$/.test(next) ? "" : next.trim();
+      const body = src.startsWith('#')
+        ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
+        : `<ri:url ri:value="${escapeHtml(src)}"/>`;
+      const capHtml = caption ? `<ac:caption>${escapeHtml(caption)}</ac:caption>` : '';
+      out.push(`<ac:image>${body}${capHtml}</ac:image>`);
+      i += caption ? 2 : 1;
+      continue;
+    }
+
+    // Info Panel blockquote: starts with > <!-- panel:color:icon -->
+    if (/^>\s*<!--\s*panel:([^:>]+):([^>]+)\s*-->/.test(line)) {
+      const m = line.match(/^>\s*<!--\s*panel:([^:>]+):([^>]+)\s*-->/i)!;
+      const color = (m[1] || '').trim().toLowerCase();
+      const icon = (m[2] || '').trim().toLowerCase();
+      const body: string[] = [];
+      // consume this line's tail and subsequent lines starting with '>'
+      const firstTail = line.replace(/^>\s*<!--[^>]+-->\s*/, '').trim();
+      if (firstTail) body.push(firstTail);
+      i++;
+      while (i < lines.length && /^>\s*/.test(lines[i] || '')) {
+        body.push((lines[i] || '').replace(/^>\s*/, ''));
+        i++;
+      }
+      // Join body as markdown text (not HTML)
+      const inner = body.map(escapeHtml).join('\n');
+      if (color === 'panel') {
+        out.push(`<ac:structured-macro ac:name="panel"><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
+      } else {
+        // Map common colors to known macros where applicable, else use panel with bgColor
+        const known = ['info','note','warning','tip','success','error'];
+        if (known.includes(color)) {
+          out.push(`<ac:structured-macro ac:name="${color}"><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
+        } else {
+          out.push(`<ac:structured-macro ac:name="panel"><ac:parameter ac:name="bgColor">${escapeHtml(color)}</ac:parameter><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`);
+        }
+      }
+      continue;
+    }
+
+    // Paragraph (consume until blank line), with inline formatting
     const para: string[] = [];
     while (i < lines.length && !/^\s*$/.test(lines[i] || "")) {
       para.push(lines[i] || "");
       i++;
     }
-    out.push(`<p>${escapeHtml(para.join(' ').trim())}</p>`);
+    out.push(`<p>${inlineHtml(para.join(' ').trim())}</p>`);
   }
   return out.join("");
 }
@@ -317,12 +431,99 @@ function cellHtml(cell: string): string {
   return segments.join('');
 }
 
+function inlineHtml(s: string): string {
+  // Minimal inline markdown to HTML: bold **text** and inline code `code`.
+  // Escape raw first, then re-inject strong/code tags.
+  const escaped = escapeHtml(s);
+  const withCode = escaped.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
+  const withBold = withCode.replace(/\*\*([^*]+)\*\*/g, (_m, inner) => `<strong>${inner}</strong>`);
+  return withBold;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function normalizeMacros(html: string): string {
   let out = html;
+  // Inline Status macro → durable token with color/title
+  out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']status["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi, (_m, inner) => {
+    const titleParam = inner.match(/<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
+    const colourParam = inner.match(/<ac:parameter[^>]*\bac:name=["'](?:colour|color)["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
+    const title = (titleParam?.[1] || '').replace(/<[^>]+>/g, '').trim();
+    const color = (colourParam?.[1] || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
+    const encTitle = encodeURIComponent(title || '');
+    const encColor = encodeURIComponent(color || '');
+    return `MD_STATUS(${encColor})[${encTitle}]`;
+  });
+
+  // Mentions (user) → durable token. Matches <ac:link> containing <ri:user ... />
+  out = out.replace(/<ac:link\b[^>]*>([\s\S]*?)<\/ac:link>/gi, (m, inner) => {
+    const userMatch = String(inner || '').match(/<ri:user[^>]*>/i);
+    if (!userMatch) return m;
+    const acc = String(inner || '').match(/ri:account-id=["']([^"']+)["']/i)?.[1]
+      || String(inner || '').match(/ri:userkey=["']([^"']+)["']/i)?.[1]
+      || String(inner || '').match(/ri:username=["']([^"']+)["']/i)?.[1]
+      || '';
+    // Attempt to get any visible text fallback
+    const visible = String(inner || '').replace(/<[^>]+>/g, '').trim();
+    const encId = encodeURIComponent(acc);
+    const encVis = encodeURIComponent(visible);
+    return `MD_MENTION(${encId})[${encVis}]`;
+  });
+
+  // Info/Note/Warning/Tip/Panel macros → MD_PANEL token with color/icon and body
+  out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["'](info|note|warning|tip|success|error|panel)["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, name: string, inner: string) => {
+      const macro = String(name || '').toLowerCase();
+      const body = inner.match(/<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i)?.[1] || '';
+      let color = macro;
+      let icon = macro;
+      if (macro === 'panel') {
+        const bg = inner.match(/<ac:parameter[^>]*\bac:name=["']bgColor["'][^>]*>([\s\S]*?)<\/ac:parameter>/i)?.[1] || '';
+        color = bg.replace(/<[^>]+>/g, '').trim() || 'panel';
+        icon = 'panel';
+      }
+      const encColor = encodeURIComponent(color);
+      const encIcon = encodeURIComponent(icon);
+      const encBody = encodeURIComponent(body);
+      return `MD_PANEL(${encColor},${encIcon})[${encBody}]`;
+    }
+  );
+
+  // Images with optional captions → durable token preserving URL/filename and caption
+  out = out.replace(/<ac:image\b[^>]*>([\s\S]*?)<\/ac:image>/gi, (_m, inner) => {
+    const url = String(inner || '').match(/<ri:url[^>]*\bri:value=["']([^"']+)["'][^>]*>/i)?.[1] || "";
+    const filename = String(inner || '').match(/<ri:attachment[^>]*\bri:filename=["']([^"']+)["'][^>]*>/i)?.[1] || "";
+    const capInner = String(inner || '').match(/<ac:caption[^>]*>([\s\S]*?)<\/ac:caption>/i)?.[1] || "";
+    const caption = capInner.replace(/<[^>]+>/g, '').trim();
+    const ref = url || (filename ? `attach:${filename}` : "");
+    if (!ref) return _m; // leave unchanged if no recognizable ref
+    const encRef = encodeURIComponent(ref);
+    const encCap = encodeURIComponent(caption);
+    return `MD_IMAGE(${encRef})[${encCap}]`;
+  });
+  // Convert Confluence code macro to a durable MD_CODE token so we can emit
+  // fenced code blocks later in markdown. We encode language and body to avoid
+  // HTML entity/DOM parsing side effects.
+  out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']code["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi, (_m, inner) => {
+    const langParam = inner.match(/<ac:parameter[^>]*\bac:name=["']language["'][^>]*>([\s\S]*?)<\/ac:parameter>/i);
+    const lang = (langParam?.[1] || "").replace(/<[^>]+>/g, '').trim();
+    // ac:plain-text-body may be wrapped in CDATA or plain text
+    const bodyMatch = inner.match(/<ac:plain-text-body[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i);
+    let body = bodyMatch?.[1] || "";
+    // Unwrap CDATA if present
+    const cdata = body.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+    if (cdata) {
+      body = cdata[1] || "";
+    } else {
+      // Decode basic HTML entities when not wrapped in CDATA
+      body = decodeBasicEntities(body);
+    }
+    const encLang = encodeURIComponent(lang);
+    const encBody = encodeURIComponent(body);
+    return `MD_CODE(${encLang})[${encBody}]`;
+  });
   // Replace TOC macro with a durable token so position is preserved through turndown
   out = out.replace(/<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi, () => 'MD_WIDGET(toc)');
   // Also handle self-closing TOC macro tags (e.g., <ac:structured-macro ac:name="toc" />)
@@ -383,7 +584,58 @@ function decodeBasicEntities(s: string): string {
 function decodeMdCommentTokens(s: string): string {
   return s
     .replace(/MD(?:\\)?_COMMENT\(([^)]+)\)/g, (_m, enc) => `<!-- ${decodeURIComponent(String(enc))} -->`)
-    .replace(/MD(?:\\)?_WIDGET\(([^)]+)\)/g, (_m, name) => `<!-- widget:${String(name).toUpperCase()} -->`);
+    .replace(/MD(?:\\)?_WIDGET\(([^)]+)\)/g, (_m, name) => `<!-- widget:${String(name).toUpperCase()} -->`)
+    
+    .replace(/MD(?:\\)?_PANEL\(([^,)]*),([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, colorEnc, iconEnc, bodyEnc) => {
+      const color = decodeURIComponent(String(colorEnc || "")) || "info";
+      const icon = decodeURIComponent(String(iconEnc || "")) || color;
+      const innerHtml = decodeURIComponent(String(bodyEnc || ""));
+      const innerMd = unescapeMarkdownUnderscores(
+        decodeMdCommentTokens(turndown.turndown(innerHtml || ""))
+      );
+      const lines = innerMd.split(/\r?\n/);
+      const outLines: string[] = [`> <!-- panel:${color}:${icon} -->`];
+      for (const l of lines) outLines.push(l.trim().length ? `> ${l}` : ">");
+      return outLines.join("\n");
+    })
+    .replace(/MD(?:\\)?_STATUS\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, colorEnc, titleEnc) => {
+      const color = decodeURIComponent(String(colorEnc || "")) || "grey";
+      const title = decodeURIComponent(String(titleEnc || "")) || "Status";
+      return `<!-- status:${color}:${title} -->`;
+    })
+    .replace(/MD(?:\\)?_IMAGE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, refEnc, capEnc) => {
+      const ref = decodeURIComponent(String(refEnc || ""));
+      const cap = decodeURIComponent(String(capEnc || ""));
+      const src = ref.startsWith('attach:') ? `#${ref.slice(7)}` : ref;
+      // Prefer single-line markdown image with caption in alt text, no trailing caption line
+      return `![${cap || ''}](${src})`;
+    })
+    .replace(/MD(?:\\)?_MENTION\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, idEnc, visEnc) => {
+      const id = decodeURIComponent(String(idEnc || ""));
+      const vis = decodeURIComponent(String(visEnc || ""));
+      const label = vis || `@${id}`;
+      return `@${label}`;
+    })
+    // Emit code blocks using fenced style ```lang\n...\n```
+    .replace(/MD(?:\\)?_CODE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, langEnc, bodyEnc) => {
+      const lang = decodeURIComponent(String(langEnc || ""));
+      const body = decodeURIComponent(String(bodyEnc || ""));
+      const fence = '```' + (lang ? String(lang) : '');
+      return `${fence}\n${body}\n\`\`\``;
+    });
+}
+
+/**
+ * Remove backslash escapes before underscores outside of code blocks and code spans.
+ * We keep any escapes inside fenced/indented code or inline code (`...`).
+ */
+function unescapeMarkdownUnderscores(md: string): string {
+  // Step 1: remove single escaped underscores
+  let out = md.replace(/\\_/g, "_");
+  // Step 2: collapse any remaining multiple backslashes before '_' to a single backslash
+  // This ensures sequences like \\_ become \_
+  out = out.replace(/\\{2,}_/g, "\\_");
+  return out;
 }
 
 function replaceTableTokens(markdown: string, tables: string[]): string {
@@ -442,7 +694,9 @@ function buildMarkdownFromDom(root: Element): string {
       }
       const tableDesc = (el as any).querySelector ? (el as any).querySelector("table") : null;
       if (tableDesc) { parts.push(renderTableMarkdown(tableDesc as Element)); continue; }
-      const md = decodeMdCommentTokens(turndown.turndown((el as any).outerHTML || (el as any).textContent || ""));
+      const md = unescapeMarkdownUnderscores(
+        decodeMdCommentTokens(turndown.turndown((el as any).outerHTML || (el as any).textContent || ""))
+      );
       if (md.trim()) parts.push(md.trim());
       continue;
     }
@@ -452,7 +706,7 @@ function buildMarkdownFromDom(root: Element): string {
       continue;
     }
   }
-  return parts.join("\n\n");
+  return unescapeMarkdownUnderscores(parts.join("\n\n"));
 }
 
 

@@ -63,9 +63,18 @@ JIRA_COMPONENTS=Documentation
 
 We store the confluence page content in markdown files. The markdown format is slightly modified to support the confluence storage format and especially confluence widgets. This also means that we might not support all layouting features of Confluence.
 
-### Confirmed Widgets:
+### Confirmed Widgets & Layouting Features:
 
+- Page Title
 - TOC
+- Code Blocks (Currently underscores get escaped to `\_`)
+- Tables (No Column Spanning & Cell Styles)
+- Lists
+- Headings
+- Paragraphs
+- Inline formatting (bold, italic, code)
+- Block formatting (block quotes)
+- Images
 
 ### Header format (must be at the top of the file)
 

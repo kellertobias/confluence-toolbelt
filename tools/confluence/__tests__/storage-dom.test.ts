@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { storageToMarkdownBlocks } from "../storage-dom.js";
+import { storageToMarkdownBlocks, markdownToStorageHtml } from "../storage-dom.js";
 
 describe("storageToMarkdownBlocks", () => {
   it("renders TOC macro as placeholder comment", () => {
@@ -34,6 +34,189 @@ describe("storageToMarkdownBlocks", () => {
     expect(out).toContain("<!-- table:bg:red -->");
     expect(out).toContain("<!-- table:bg:green -->");
     expect(out).toContain("<!-- table:bg:blue -->");
+  });
+
+  it("converts Confluence code macro to fenced code block with language", () => {
+    const html = `
+      <ac:structured-macro ac:name="code">
+        <ac:parameter ac:name="language">typescript</ac:parameter>
+        <ac:plain-text-body><![CDATA[const x: number = 1;\nconsole.log(x);]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(out).toContain("```typescript\nconst x: number = 1;\nconsole.log(x);\n```");
+  });
+
+  it("decodes MD_CODE token into fenced JSON with original content intact", () => {
+    const jsonSnippet = [
+      "// .cursor/mcp.json or ~/.cursor/mcp.json",
+      "{",
+      "  \"mcpServers\": {",
+      "    \"mcp-atlassian\": {",
+      "      \"command\": \"docker\",",
+      "      \"args\": [\"run\", \"-i\", \"--rm\"],",
+      "      \"env\": {}",
+      "    }",
+      "  }",
+      "}",
+    ].join("\n");
+    const html = `
+      <ac:structured-macro ac:name="code">
+        <ac:parameter ac:name="language">json</ac:parameter>
+        <ac:plain-text-body><![CDATA[${jsonSnippet}]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(out).toContain("```json\n// .cursor/mcp.json or ~/.cursor/mcp.json");
+    expect(out).toContain("\n}\n```");
+  });
+
+  it("converts fenced code block back to Confluence code macro with language", () => {
+    const md = [
+      "```bash",
+      "echo hello",
+      "```",
+      "",
+      "```",
+      "no-lang fence",
+      "```",
+    ].join("\n");
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="code">');
+    expect(html).toContain('<ac:parameter ac:name="language">bash</ac:parameter>');
+    expect(html).toContain('<ac:plain-text-body><![CDATA[echo hello]]></ac:plain-text-body>');
+    expect(html).toContain('<ac:plain-text-body><![CDATA[no-lang fence]]></ac:plain-text-body>');
+  });
+
+  it("preserves raw text when CDATA would be broken by ]]>", () => {
+    const md = [
+      "```",
+      "end of cdata ]]> should be escaped",
+      "```",
+    ].join("\n");
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="code">');
+    expect(html).toContain('<ac:plain-text-body>');
+    expect(html).toContain('end of cdata ]&gt; should be escaped');
+  });
+
+  it("converts Confluence code macro to fenced code block", () => {
+    const html = `
+      <ac:structured-macro ac:name="code">
+        <ac:parameter ac:name="language">json</ac:parameter>
+        <ac:plain-text-body><![CDATA[line1\nline2]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    // Expect fenced block
+    expect(out).toContain("```\nline1\nline2\n```");
+  });
+
+  it("parses indented code blocks back to code macro", () => {
+    const md = [
+      "    const a = 1;",
+      "    console.log(a);",
+      "",
+      "Not code",
+    ].join("\n");
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="code">');
+    expect(html).toContain('<ac:plain-text-body><![CDATA[const a = 1\nconsole.log(a);]]></ac:plain-text-body>');
+  });
+
+  it("converts unordered lists and inline formatting", () => {
+    const md = [
+      "**bold** and `code` in a paragraph.",
+      "",
+      "- Item 1",
+      "- Item 2",
+    ].join("\n");
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<p><strong>bold</strong> and <code>code</code> in a paragraph.</p>');
+    expect(html).toContain('<ul><li>Item 1</li><li>Item 2</li></ul>');
+  });
+
+  it("does not escape underscores in download outside code", () => {
+    const html = `
+      <p>Env: CONFLUENCE_API_TOKEN and CONFLUENCE_USERNAME</p>
+    `;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(out).toContain("CONFLUENCE_API_TOKEN");
+    expect(out).toContain("CONFLUENCE_USERNAME");
+    expect(out).not.toContain("\\_");
+  });
+
+  it("does not escape underscores in plain text nodes", () => {
+    const html = `Text with CONST_VAR and another_VAR`;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(out).toContain("CONST_VAR");
+    expect(out).toContain("another_VAR");
+    expect(out).not.toContain("CONST\\_VAR");
+  });
+
+  it("collapses double-escaped underscores to single escaped underscore", () => {
+    const html = `<p>double: \\_ should normalize</p>`;
+    const out = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(out).toContain("\\_");
+  });
+
+  it("preserves status inline tag round-trip", () => {
+    const html = `
+      <ac:structured-macro ac:name="status">
+        <ac:parameter ac:name="title">In Progress</ac:parameter>
+        <ac:parameter ac:name="colour">Yellow</ac:parameter>
+      </ac:structured-macro>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown.trim()).join("\n");
+    expect(md).toContain("<!-- status:yellow:In Progress -->");
+    const back = markdownToStorageHtml(md);
+    expect(back).toContain('<ac:structured-macro ac:name="status">');
+    expect(back).toContain('<ac:parameter ac:name="title">In Progress</ac:parameter>');
+    expect(back).toContain('<ac:parameter ac:name="colour">yellow</ac:parameter>');
+  });
+
+  it("preserves mention round-trip as @label", () => {
+    const html = `
+      <ac:link><ri:user ri:account-id="abc-123" /></ac:link>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown.trim()).join("\n");
+    expect(md).toContain("@");
+    const back = markdownToStorageHtml(md + "\n");
+    // We don't implement upload mention macro; ensure it remains as visible text
+    expect(back).toContain('<p>');
+  });
+
+  it("converts Confluence image with caption to markdown image + caption and back", () => {
+    const html = `
+      <ac:image>
+        <ri:url ri:value="https://example.com/img.png" />
+        <ac:caption>Figure 1: Example</ac:caption>
+      </ac:image>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown.trim()).join("\n");
+    expect(md).toContain("![](" );
+    expect(md).toContain("https://example.com/img.png");
+    expect(md).toContain("Figure 1: Example");
+    const back = markdownToStorageHtml(md);
+    expect(back).toContain('<ac:image>');
+    expect(back).toContain('<ri:url ri:value="https://example.com/img.png"/>');
+    expect(back).toContain('<ac:caption>Figure 1: Example</ac:caption>');
+  });
+
+  it("panel macro downloads as blockquote with config tag and uploads back", () => {
+    const html = `
+      <ac:structured-macro ac:name="info">
+        <ac:rich-text-body>
+          <p>Be aware of this.</p>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const md = storageToMarkdownBlocks(html).map(b => b.markdown).join("\n");
+    expect(md).toContain("> <!-- panel:info:info -->");
+    expect(md).toContain("> Be aware of this.");
+    const back = markdownToStorageHtml(md);
+    expect(back).toContain('<ac:structured-macro ac:name="info">');
+    expect(back).toContain('<ac:rich-text-body>');
   });
 });
 

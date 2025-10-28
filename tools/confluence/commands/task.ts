@@ -8,6 +8,8 @@
 
 import { prompt } from "enquirer";
 import readline from "readline";
+import { execFile, spawn } from "node:child_process";
+import os from "node:os";
 
 interface Options { cwd: string }
 
@@ -30,6 +32,95 @@ function buildAuthHeaders(): Record<string, string> {
   throw new Error(
     "Jira auth not configured. Set JIRA_ACCESS_TOKEN or JIRA_EMAIL and JIRA_API_TOKEN"
   );
+}
+
+/**
+ * Execute a short AppleScript one-liner with `osascript` and return stdout.
+ *
+ * Why: Provide lightweight macOS GUI without extra dependencies.
+ * How: Calls the system `osascript` binary; resolves trimmed stdout.
+ */
+async function runAppleScript(script: string): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    execFile("osascript", ["-e", script], { encoding: "utf8" }, (err, stdout, stderr) => {
+      if (err) return reject(err);
+      resolve(String(stdout || "").trim());
+    });
+  });
+}
+
+/**
+ * Show a macOS dialog asking for text input and return the entered value.
+ *
+ * Why: Collect a single-line input (title or short text) via GUI.
+ * Note: `display dialog` uses a single-line text field; for multi-line content
+ * we accept literal "\\n" sequences which will be expanded to real newlines.
+ */
+async function macPromptText(message: string, defaultAnswer = "", title = "Jira Task"): Promise<string> {
+  const osa = `text returned of (display dialog ${JSON.stringify(message)} default answer ${JSON.stringify(defaultAnswer)} with title ${JSON.stringify(title)})`;
+  const out = await runAppleScript(osa);
+  return out;
+}
+
+/**
+ * Show a macOS Yes/No dialog and return true for Yes.
+ *
+ * Why: Capture boolean choices (e.g. assign to yourself) via GUI.
+ */
+async function macConfirm(message: string, defaultYes = true, title = "Jira Task"): Promise<boolean> {
+  const buttons = ["No", "Yes"];
+  const defaultButton = defaultYes ? "Yes" : "No";
+  const osa = `button returned of (display dialog ${JSON.stringify(message)} buttons {${buttons.map((b) => JSON.stringify(b)).join(",")}} default button ${JSON.stringify(defaultButton)} with title ${JSON.stringify(title)})`;
+  const out = await runAppleScript(osa);
+  return out === "Yes";
+}
+
+/**
+ * Copy text to macOS clipboard using `pbcopy`.
+ */
+async function macCopyToClipboard(text: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const p = spawn("pbcopy", [], { stdio: ["pipe", "ignore", "ignore"] });
+    p.on("error", reject);
+    p.on("close", () => resolve());
+    p.stdin.write(text);
+    p.stdin.end();
+  });
+}
+
+/**
+ * Show a macOS user notification via AppleScript.
+ */
+async function macNotify(title: string, message: string): Promise<void> {
+  const osa = `display notification ${JSON.stringify(message)} with title ${JSON.stringify(title)}`;
+  try {
+    await runAppleScript(osa);
+  } catch {
+    // Best-effort; ignore notification failures.
+  }
+}
+
+/**
+ * Open a temporary document in TextEdit to collect multi-line input and return its contents.
+ *
+ * Why: AppleScript's `display dialog` text field is single-line; TextEdit provides a familiar multi-line editor.
+ * How: Creates a new document in TextEdit, shows an OK/Cancel dialog; on OK reads document text, closes without saving.
+ */
+async function macPromptMultiline(title = "Jira Task", message = "Enter task content, then click OK."): Promise<string> {
+  const osa = `
+set docText to ""
+tell application "TextEdit"
+  activate
+  set newDoc to make new document with properties {text:""}
+end tell
+display dialog ${JSON.stringify(message)} buttons {"Cancel", "OK"} default button "OK" with title ${JSON.stringify(title)}
+tell application "TextEdit"
+  set docText to (text of newDoc) as text
+  close newDoc saving no
+end tell
+return docText
+`;
+  return await runAppleScript(osa);
 }
 
 /**
@@ -164,13 +255,36 @@ export async function createTask(opts: Options): Promise<void> {
   const issueType = process.env.JIRA_ISSUE_TYPE || "Task";
   const defaultAssign = true; // default Yes
 
-  const basicAnswers: any = await prompt([
-    { name: "title", type: "input", message: "Task title:" },
-    { name: "assignSelf", type: "confirm", initial: defaultAssign, message: "Assign to yourself?" },
-  ]);
+  const guiEnabled = Boolean(process.env.JIRA_GUI);
+  const isMac = os.platform() === "darwin";
 
-  // Read content in true multiline mode: Enter inserts newlines, Ctrl+D submits
-  const content = await readMultiline("Task content (Enter for newline, Ctrl+D to submit):\n");
+  /**
+   * Gather task inputs either via GUI (macOS + JIRA_GUI) or terminal prompts.
+   */
+  let basicAnswers: { title: string; assignSelf: boolean };
+  let content: string;
+
+  if (guiEnabled && isMac) {
+    // GUI mode: collect via macOS dialogs/TextEdit
+    const title = await macPromptText("Task title:");
+    const assignSelf = await macConfirm("Assign to yourself?", defaultAssign);
+    try {
+      content = await macPromptMultiline();
+    } catch {
+      // Fallback: minimal single-line prompt with \n escape if TextEdit is unavailable
+      const raw = await macPromptText("Task content (use \\n for newlines):");
+      content = raw.replace(/\\n/g, "\n");
+    }
+    basicAnswers = { title, assignSelf };
+  } else {
+    // Terminal mode: enquirer + multiline read
+    basicAnswers = await prompt([
+      { name: "title", type: "input", message: "Task title:" },
+      { name: "assignSelf", type: "confirm", initial: defaultAssign, message: "Assign to yourself?" },
+    ]) as any;
+    // Read content in true multiline mode: Enter inserts newlines, Ctrl+D submits
+    content = await readMultiline("Task content (Enter for newline, Ctrl+D to submit):\n");
+  }
 
   const headers = buildAuthHeaders();
 
@@ -224,6 +338,16 @@ export async function createTask(opts: Options): Promise<void> {
 
   const issueUrl = new URL(`/browse/${encodeURIComponent(key)}`, baseUrl).toString();
   console.log(`[task] ${issueUrl}`);
+
+  // If GUI mode was used on macOS, copy link and show a notification
+  if (guiEnabled && isMac) {
+    try {
+      await macCopyToClipboard(issueUrl);
+    } catch {
+      // Ignore clipboard errors; still try to notify
+    }
+    await macNotify("Jira Task Created", `${key} created and link copied to clipboard`);
+  }
 }
 
 
