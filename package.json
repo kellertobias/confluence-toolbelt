@@ -3,10 +3,6 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "sync:dry": "CONFLUENCE_DRY_RUN=true markdown-confluence-sync --logLevel info",
-    "sync": "markdown-confluence-sync --logLevel info",
-    "pull": "node scripts/pull-from-confluence.mjs",
     "confluence:download": "tsx tools/confluence/cli.ts download",
     "confluence:upload": "tsx tools/confluence/cli.ts upload",
     "confluence:create": "tsx tools/confluence/cli.ts create",

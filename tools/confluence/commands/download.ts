@@ -14,31 +14,31 @@ interface Options { cwd: string; args?: string[] }
 export async function downloadAll(opts: Options): Promise<void> {
   const force = opts.args?.includes("--force");
   const client = fromEnv();
-  const mappingPath = path.resolve(opts.cwd, "confluence-pages.json");
-  const docsDir = path.resolve(opts.cwd, "docs");
-  const mapping: Record<string, { id: string; title?: string }> = fs.existsSync(mappingPath)
-    ? JSON.parse(fs.readFileSync(mappingPath, "utf8"))
-    : {};
-
-  let entries = Object.entries(mapping);
-  if (entries.length === 0) {
-    // Fallback: scan docs for header
-    const all = walkMarkdown(docsDir);
-    const headered = all
-      .map((p) => ({ p, h: parseHeader(fs.readFileSync(p, "utf8")) }))
-      .filter((x) => x.h.meta.pageId)
-      .map((x) => [path.relative(opts.cwd, x.p), { id: String(x.h.meta.pageId) } as { id: string }]);
-    entries = headered as any;
-  }
+  // Discover .md files and extract pageId from header
+  const all = walkMarkdown(opts.cwd);
+  const entries = all
+    .map((p) => ({ p, h: parseHeader(fs.readFileSync(p, "utf8")) }))
+    .filter((x) => x.h.meta.pageId)
+    .map((x) => [path.relative(opts.cwd, x.p), { id: String(x.h.meta.pageId), spaceId: x.h.meta.spaceId, title: x.h.meta.title }] as const);
 
   for (const [relPath, meta] of entries) {
     const filePath = path.resolve(opts.cwd, relPath);
-    const { storageHtml } = await client.getPageStorage(meta.id);
+    const { storageHtml, title: remoteTitle, spaceId: remoteSpaceId } = await client.getPageStorage(meta.id);
     const blocks = storageToMarkdownBlocks(storageHtml);
     const body = blocks
       .map((b) => (b.nodeId ? emitTag({ tagType: "content", nodeId: b.nodeId }) : "") + b.markdown + "\n")
       .join("\n");
-    const header = emitHeader({ pageId: meta.id, spaceId: undefined });
+    // Preserve optional header fields (emoji/status/image) from existing file header if present
+    const existingText = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+    const existingHeader = parseHeader(existingText).meta;
+    const header = emitHeader({
+      pageId: meta.id,
+      spaceId: meta.spaceId || remoteSpaceId,
+      title: meta.title || remoteTitle,
+      emoji: existingHeader.emoji,
+      status: existingHeader.status,
+      image: existingHeader.image,
+    });
     const next = header + body.trim() + "\n";
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";

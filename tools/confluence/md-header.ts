@@ -10,6 +10,10 @@
 export interface HeaderMeta {
   spaceId?: string;
   pageId?: string;
+  title?: string;
+  emoji?: string; // emoji short name, e.g., rocket
+  status?: string; // format: color:Label text, e.g., green:In Progress
+  image?: string; // URL
 }
 
 const HEADER_START = "<!--";
@@ -30,13 +34,26 @@ export function parseHeader(markdown: string): { meta: HeaderMeta; body: string 
     const value = m[2];
     if (key === "spaceId") meta.spaceId = value;
     if (key === "pageId") meta.pageId = value;
+    if (key === "title") meta.title = value;
+    if (key === "emoji") meta.emoji = value;
+    if (key === "status") meta.status = value;
+    if (key === "image") meta.image = value;
   }
   const body = trimmed.slice(end + HEADER_END.length).replace(/^\s*\n/, "");
   return { meta, body };
 }
 
 export function emitHeader(meta: HeaderMeta): string {
-  const lines = ["<!--", `spaceId: ${meta.spaceId ?? ""}`, `pageId: ${meta.pageId ?? ""}`, "-->"]; 
+  const lines = [
+    "<!--",
+    `spaceId: ${meta.spaceId ?? ""}`,
+    `pageId: ${meta.pageId ?? ""}`,
+    `title: ${meta.title ?? ""}`,
+    ...(meta.emoji ? [`emoji: ${meta.emoji}`] : []),
+    ...(meta.status ? [`status: ${meta.status}`] : []),
+    ...(meta.image ? [`image: ${meta.image}`] : []),
+    "-->",
+  ]; 
   return lines.join("\n") + "\n\n";
 }
 

@@ -21,13 +21,13 @@ CONFLUENCE_EMAIL=your-email
 CONFLUENCE_API_TOKEN=your-api-token
 ```
 
-Then run a `npx @iu/confluence-tools pull` to download the current page content from confluence. Now edit the file as you please.
+Then run a `npx @tobisk/confluence-tools pull` to download the current page content from confluence. Now edit the file as you please.
 
-Then run a `npx @iu/confluence-tools upload` to upload the changes back to confluence.
+Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to confluence.
 
-We will later support an additional command `npx @iu/confluence-tools sync` where we internally download the current page content before the upload and provide you with git diffing before the actual upload. For now, we suggest you to manually use git for being sure about your changes.
+We will later support an additional command `npx @tobisk/confluence-tools sync` where we internally download the current page content before the upload and provide you with git diffing before the actual upload. For now, we suggest you to manually use git for being sure about your changes.
 
-You can also create a new page by running `npx @iu/confluence-tools create`. This will create a new markdown file in the current folder with the header and the page content.
+You can also create a new page by running `npx @tobisk/confluence-tools create`. This will create a new markdown file in the current folder with the header and the page content.
 
 ## Markdown Format
 
