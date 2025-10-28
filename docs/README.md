@@ -1,29 +1,25 @@
----
-title: "README"
-sync_to_confluence: true
----
+<!--
+spaceId: 
+pageId: 5678568049
+-->
 
-**AUTOMATION NOTICE: This page is synced automatically, changes made manually will be lost**
+# Automated test update via CLI
 
-# Project Docs
+This line was added to verify upload and pull round-trip.
 
-Welcome to the documentation. This page is used to validate the Confluence sync in id mode.
+<!-- widget:TOC -->
 
-## What this page demonstrates
+This is an edited file.
 
-*   Syncing a single page via explicit Confluence page ID mapping
-    
-*   Frontmatter-based enable flag: `sync_to_confluence: true`
-    
-*   Automatic automation notice insertion at the top of the Confluence page
-    
-*   Does comment work?
-    
+| Title 1 | Title 2 | Title 3 |
+| --- | --- | --- |
+| A | B | C |
+| red | green | blue |
 
-Does online editing work?
+# More Content
 
-## Example content
+asdfasdf
 
-Here is a simple Mermaid diagram to test attachment generation:
+# Third
 
-`graph LR A[Start] --> B{Is configured?} B -- Yes --> C[Run dry-run] B -- No --> D[Fix config] C --> E[Run sync] D --> B`
+Hallo

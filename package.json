@@ -6,14 +6,29 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "sync:dry": "CONFLUENCE_DRY_RUN=true markdown-confluence-sync --logLevel info",
     "sync": "markdown-confluence-sync --logLevel info",
-    "pull": "node scripts/pull-from-confluence.mjs"
+    "pull": "node scripts/pull-from-confluence.mjs",
+    "confluence:download": "tsx tools/confluence/cli.ts download",
+    "confluence:upload": "tsx tools/confluence/cli.ts upload",
+    "confluence:create": "tsx tools/confluence/cli.ts create",
+    "test:unit": "vitest run"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
     "@telefonica/markdown-confluence-sync": "^2.2.0",
+    "@types/node": "^22.7.5",
     "dotenv": "^16.4.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "enquirer": "^2.4.1",
+    "linkedom": "^0.18.7",
+    "jsdom": "^25.0.1",
+    "markdown-it": "^14.1.0",
+    "simple-git": "^3.27.0",
     "turndown": "^7.1.2",
     "turndown-plugin-gfm": "^1.0.2"
   }
