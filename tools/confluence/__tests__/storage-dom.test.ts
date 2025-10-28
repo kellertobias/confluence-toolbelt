@@ -136,6 +136,31 @@ describe("storageToMarkdownBlocks", () => {
     expect(html).toContain('<ul><li>Item 1</li><li>Item 2</li></ul>');
   });
 
+  it("decodes literal \\n in table cell markdown back to <br/> on upload", () => {
+    const md = [
+      "| Col |",
+      "| --- |",
+      "| line1\\nline2 |",
+    ].join("\n");
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<td>line1<br/>line2</td>');
+  });
+
+  it("converts links, mentions, and blockquotes on upload", () => {
+    const md = [
+      "> <!-- panel:info:info -->",
+      "> **Bold** text with a [link](https://example.com) and @user mention.",
+      "",
+      "> normal block quote line",
+    ].join("\n");
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="info">');
+    expect(html).toContain('<strong>Bold</strong>');
+    expect(html).toContain('<a href="https://example.com">link</a>');
+    expect(html).toContain('<ri:user ri:username="user"/>');
+  });
+
   it("does not escape underscores in download outside code", () => {
     const html = `
       <p>Env: CONFLUENCE_API_TOKEN and CONFLUENCE_USERNAME</p>

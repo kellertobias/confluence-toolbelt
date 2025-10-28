@@ -323,8 +323,10 @@ export function markdownToStorageHtml(md: string): string {
       const body = src.startsWith('#')
         ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
         : `<ri:url ri:value="${escapeHtml(src)}"/>`;
-      const capHtml = caption ? `<ac:caption>${escapeHtml(caption)}</ac:caption>` : '';
-      out.push(`<ac:image>${body}${capHtml}</ac:image>`);
+      const capHtml = caption ? `<ac:caption>${inlineHtml(caption)}</ac:caption>` : '';
+      // Constrain image display by default for better layout
+      const displayParam = `<ac:parameter ac:name="width">800</ac:parameter>`;
+      out.push(`<ac:image>${displayParam}${body}${capHtml}</ac:image>`);
       i += caption ? 2 : 1;
       continue;
     }
@@ -359,13 +361,16 @@ export function markdownToStorageHtml(md: string): string {
       continue;
     }
 
-    // Paragraph (consume until blank line), with inline formatting
+    // Paragraph (consume until blank line), with inline formatting including links and mentions
     const para: string[] = [];
     while (i < lines.length && !/^\s*$/.test(lines[i] || "")) {
       para.push(lines[i] || "");
       i++;
     }
-    out.push(`<p>${inlineHtml(para.join(' ').trim())}</p>`);
+    let paraText = para.join(' ').trim();
+    // Convert @Username into Confluence mention link if pattern matches @word characters
+    paraText = paraText.replace(/(^|\s)@([A-Za-z0-9_.-]+)/g, (_m, space, user) => `${space}<ac:link><ri:user ri:username="${escapeHtml(user)}"/></ac:link>`);
+    out.push(`<p>${inlineHtml(paraText)}</p>`);
   }
   return out.join("");
 }
@@ -422,22 +427,26 @@ function cellHtml(cell: string): string {
   let m: RegExpExecArray | null;
   while ((m = re.exec(cell)) !== null) {
     const pre = cell.slice(last, m.index);
-    if (pre) segments.push(escapeHtml(pre));
+    if (pre) segments.push(escapeHtml(pre).replace(/\\n/g, '<br/>'));
     segments.push(m[0]);
     last = m.index + m[0]?.length;
   }
   const tail = cell.slice(last);
-  if (tail) segments.push(escapeHtml(tail));
-  return segments.join('');
+  if (tail) segments.push(escapeHtml(tail).replace(/\\n/g, '<br/>'));
+  let out = segments.join('');
+  // Trim trailing <br/> that may come from markdown literal \n at the end of cell
+  out = out.replace(/(?:<br\/>\s*)+$/i, '');
+  return out;
 }
 
 function inlineHtml(s: string): string {
   // Minimal inline markdown to HTML: bold **text** and inline code `code`.
-  // Escape raw first, then re-inject strong/code tags.
+  // Escape raw first, then re-inject code/bold/links.
   const escaped = escapeHtml(s);
   const withCode = escaped.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
   const withBold = withCode.replace(/\*\*([^*]+)\*\*/g, (_m, inner) => `<strong>${inner}</strong>`);
-  return withBold;
+  const withLinks = withBold.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `<a href="${escapeHtml(String(href))}">${text}</a>`);
+  return withLinks;
 }
 
 function escapeHtml(s: string): string {
