@@ -69,14 +69,16 @@ We store the confluence page content in markdown files. The markdown format is s
 
 - Page Title
 - TOC
-- Code Blocks (Currently underscores get escaped to `\_`)
+- Code Blocks
 - Tables (No Column Spanning & Cell Styles)
 - Lists
 - Headings
 - Paragraphs
 - Inline formatting (bold, italic, code)
-- Block formatting (block quotes)
+- Block formatting (block quotes, info panels)
 - Images
+
+We also try to contain comments and mentions as well as possible, but this behaviour is not exhaustively tested.
 
 ### Header format (must be at the top of the file)
 
