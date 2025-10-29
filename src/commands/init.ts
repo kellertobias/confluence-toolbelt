@@ -6,7 +6,8 @@
  * required environment variable names and formats. Also ensure proper git setup
  * to prevent accidental credential commits.
  * How: Writes a `.env` in the current working directory if missing, initializes
- * git repo if needed, creates/updates .gitignore to protect sensitive files.
+ * git repo if needed, creates/updates .gitignore to protect sensitive files,
+ * and commits the .gitignore to version control.
  */
 
 import fs from "fs";
@@ -72,8 +73,9 @@ async function initGitRepo(opts: Options): Promise<void> {
  * Create or update .gitignore to include .env and other sensitive files.
  * Why: Prevent accidental commit of credentials and local configuration.
  * How: Create .gitignore if missing, then ensure .env is listed.
+ * Returns true if .gitignore was created or modified, false otherwise.
  */
-function ensureGitignore(opts: Options): void {
+function ensureGitignore(opts: Options): boolean {
   const gitignorePath = path.resolve(opts.cwd, ".gitignore");
   const entriesToAdd = [".env"];
   
@@ -96,7 +98,7 @@ function ensureGitignore(opts: Options): void {
     ].join("\n");
     fs.writeFileSync(gitignorePath, content, "utf8");
     console.log(`[init] Created .gitignore`);
-    return;
+    return true;
   }
 
   // Check existing .gitignore and add missing entries
@@ -116,8 +118,10 @@ function ensureGitignore(opts: Options): void {
       missing.join("\n") + "\n";
     fs.writeFileSync(gitignorePath, updated, "utf8");
     console.log(`[init] Added ${missing.join(", ")} to .gitignore`);
+    return true;
   } else {
     console.log(`[init] .gitignore already contains .env`);
+    return false;
   }
 }
 
@@ -198,18 +202,54 @@ function createOrUpdateEnv(opts: Options): void {
 }
 
 /**
+ * Commit the .gitignore file to the git repository.
+ * Why: Track the .gitignore in version control as part of initialization.
+ * How: Stage and commit the .gitignore file with a descriptive message.
+ */
+async function commitGitignore(opts: Options): Promise<void> {
+  const git = simpleGit({ baseDir: opts.cwd });
+  const gitignorePath = ".gitignore";
+  
+  try {
+    // Stage the .gitignore file
+    await git.add(gitignorePath);
+    
+    // Check if there are changes to commit
+    const status = await git.status();
+    const hasChanges = status.staged.length > 0;
+    
+    if (!hasChanges) {
+      // No changes to commit
+      return;
+    }
+    
+    // Commit with a descriptive message
+    await git.commit("chore: initialize .gitignore");
+    console.log(`[init] Committed .gitignore`);
+  } catch (err) {
+    // Log but don't throw - initialization succeeded, commit failure is non-critical
+    console.warn(`[init] Failed to commit .gitignore:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
  * Main initialization function: set up git, .gitignore, and .env.
  * Why: Provide complete project initialization in one command.
- * How: Orchestrate git init, .gitignore creation, and .env setup.
+ * How: Orchestrate git init, .gitignore creation, .env setup, and commit .gitignore.
  */
 export async function initEnv(opts: Options): Promise<void> {
   // 1. Initialize git repository
   await initGitRepo(opts);
   
   // 2. Ensure .gitignore exists and contains .env
-  ensureGitignore(opts);
+  const gitignoreChanged = ensureGitignore(opts);
   
-  // 3. Create or update .env file
+  // 3. Commit .gitignore if it was created or modified
+  if (gitignoreChanged) {
+    await commitGitignore(opts);
+  }
+  
+  // 4. Create or update .env file
   createOrUpdateEnv(opts);
 }
 
