@@ -8,52 +8,32 @@ This repository contains the required tools to download Confluence pages as mark
 
 ## Usage and Use Cases
 
+### Initial Setup
+
 Initialize your local environment by running `npx @tobisk/confluence-tools init`. This will:
 - Initialize a git repository (if not already initialized)
 - Create a `.gitignore` file with recommended entries
 - Create a `.env` file with required variables and helpful comments
 - Ensure `.env` is added to `.gitignore` to prevent credential leaks
 
-### AI Assisted Editing/ Offline Editing
+Now edit the .env file with your Confluence and Jira credentials.
 
-To use this tool, simply create a markdown (.md) file in current folder or any subfolder of it. The document must have a header with the following format:
+### Downloading Pages
 
-```
-<!--
-spaceId: 123
-pageId: 456
--->
-```
-
-You also need a .env file in the folder you execute the commands from. The file must contain the following variables:
-
-```
-CONFLUENCE_BASE_URL=https://your-confluence-instance.com
-CONFLUENCE_EMAIL=your-email
-CONFLUENCE_API_TOKEN=your-api-token
-```
-
-Then run a `npx @tobisk/confluence-tools download` to download the current page content from confluence. Now edit the file as you please. (or `npm run confluence:download` for development)
-
-### Download from URL
-
-You can also download pages directly from Confluence URLs:
+You start by downloading pages from Confluence. This can be done by pasting the URL of the page into the command line or by using the pageId.
 
 ```bash
 npx @tobisk/confluence-tools download https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title
-```
 
-Or using just the pageId:
-
-```bash
+# Or using just the pageId:
 npx @tobisk/confluence-tools download 123456
-```
 
-**Custom file path:** Specify where to save the file as a second argument:
-
-```bash
+# Or with a custom file path as second argument:
 npx @tobisk/confluence-tools download https://... docs/my-page.md
 npx @tobisk/confluence-tools download 123456 path/to/file.md
+
+# Or in the development mode:
+npm run confluence:download /*... args*/
 ```
 
 When downloading from a URL or pageId, the tool will:
@@ -62,54 +42,35 @@ When downloading from a URL or pageId, the tool will:
 - Create a file named `YYMMDD-Title.md` (or use your custom path if provided) where the date is the last published date
 - Automatically commit the file to git
 
-You can download multiple pages at once (without custom paths):
+⚠️ If you want a file to be read-only, you can add the `READONLY` flag to the header. This is helpful for reference pages and templates that should not be modified.
 
-```bash
-npx @tobisk/confluence-tools download URL1 URL2 URL3
-```
+### Uploading Changes
 
 ![Tobisk Confluence Tools](https://github.com/kellertobias/confluence-toolbelt/raw/main/.docs/upload-example.png)
 
-Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to confluence. The upload command supports several modes:
+Then run a `npx @tobisk/confluence-tools upload` (or `npm run confluence:upload` for development) to upload the changes back to confluence. The upload command supports several modes:
 - **No arguments**: Shows an interactive file selection menu (files with git changes appear first)
 - **`--all` flag**: Uploads all markdown files in the current folder and subfolders
 - **Explicit file paths**: Upload specific files, e.g., `upload docs/page1.md docs/page2.md`
 - **`--verbose` flag**: Show detailed information about the upload process
 
-The interactive menu shows all files with a `pageId` (excluding READONLY files), with changed files marked with ● and unchanged files with ○.
-
-(or `npm run confluence:upload` for development)
-
-You can also create a new page by running `npx @tobisk/confluence-tools create`. This will create a new markdown file in the current folder with the header and the page content. (or `npm run confluence:create` for development)
+The interactive menu shows all files with a `pageId` (excluding READONLY files), with changed files listed first.
 
 ### Create a Jira Task
+
+Using Jira can be a hassle, especially if your company has an inflation of custom fields that all need to be set for each new task. This tool helps you create Jira tasks from the command line with the default values, e.g. Team, Project, etc. already set (Set them once in the .env file and you're good to go).
 
 Run `npm run confluence:task` to create a new Jira issue (Task) via prompts:
 
 - Title
-- Content (multiline; press Ctrl+Enter to submit)
 - Assign to yourself (default Yes)
+- Content (multiline; press Ctrl+D to submit)
 
-It also can set default values for fields like Team, Project, etc. to avoid typing them every time.
+Don't forget to setup the .env file with your Jira credentials and default values for the task fields.
 
-Required `.env` variables:
+### Disable git integration
 
-```
-JIRA_BASE_URL=https://your-domain.atlassian.net
-JIRA_PROJECT_KEY=ABC
-# Auth: either access token OR basic auth
-JIRA_ACCESS_TOKEN=...
-# or
-JIRA_EMAIL=you@example.com
-JIRA_API_TOKEN=...
-
-# Optional defaults
-JIRA_ISSUE_TYPE=Task
-JIRA_PRIORITY=Medium
-JIRA_LABELS=docs,automation
-JIRA_COMPONENTS=Documentation
-JIRA_DEFAULT_FIELDS='{}' # Optional: default fields for the Jira issue
-```
+Both download and upload commands automatically commit changes to git for version tracking. This keeps your git history in sync with Confluence. To disable this behavior, set the `NO_AUTO_COMMIT` environment variable.
 
 ## Markdown Format
 
@@ -117,18 +78,18 @@ We store the confluence page content in markdown files. The markdown format is s
 
 ### Confirmed Widgets & Layouting Features:
 
-- Page Title
-- TOC
-- Code Blocks
-- Tables (No Column Spanning & Cell Styles)
+- Page Title & Status
+- Tables (No Column Spanning & Cell Styles yet)
 - Lists
 - Headings
 - Paragraphs
-- Inline formatting (bold, italic, code)
+- Inline formatting (bold, italic, code, links, mentions)
 - Block formatting (block quotes, info panels)
+- TOC (Table of Contents)
+- Code Blocks
 - Images
 
-We also try to contain comments and mentions as well as possible, but this behaviour is not exhaustively tested.
+We also try to contain comments as well as possible, but this behavior is not yet exhaustively tested.
 
 ### Header format (must be at the top of the file)
 
@@ -156,22 +117,12 @@ status: green:In Progress
 
 ### Inline tag format (place immediately before a block you want to map)
 
+There are tags placed in the markdown that control how we map the markdown back to the confluence storage format. These tags should not be removed, since otherwise the changes will not be applied correctly.
+
 ```
+# example:
 <!-- tag:content nodeId:789 -->
 ```
 
-### Environment
-
-- `CONFLUENCE_BASE_URL` (or `CONFLUENCE_URL`)
-- `CONFLUENCE_EMAIL`
-- `CONFLUENCE_API_TOKEN`
-- `NO_AUTO_COMMIT` (optional) - When set (to any value), disables automatic git commits after download and upload operations
-
-
-### Notes
-
-- **Automatic Git Commits**: Both download and upload commands automatically commit changes to git for version tracking. This keeps your git history in sync with Confluence. To disable this behavior, set the `NO_AUTO_COMMIT` environment variable (e.g., `export NO_AUTO_COMMIT=1` or `NO_AUTO_COMMIT=1 npx @tobisk/confluence-tools upload`).
-- Partial updates rely on inline tags and the presence of stable `data-node-id` attributes in storage HTML. If node IDs are missing or unmappable, the CLI falls back to full-page updates.
-- Review diffs after downloads and before uploads.
 
 
