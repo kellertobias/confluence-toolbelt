@@ -1,3 +1,9 @@
+## 1.2.0 (2025-10-29)
+
+* feat: add NO_AUTO_COMMIT option to disable automatic git commits ([489d8b6](https://github.com/kellertobias/confluence-toolbelt/commit/489d8b6))
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([386cb71](https://github.com/kellertobias/confluence-toolbelt/commit/386cb71))
+* chore: swap npm and exec plugins in semantic release configuration ([3d531ed](https://github.com/kellertobias/confluence-toolbelt/commit/3d531ed))
+
 ## 1.1.0 (2025-10-29)
 
 * feat: enhance download functionality and README updates ([6bbf24c](https://github.com/kellertobias/confluence-toolbelt/commit/6bbf24c))
