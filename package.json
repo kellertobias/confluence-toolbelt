@@ -1,6 +1,6 @@
 {
   "name": "@tobisk/confluence-tools",
-  "version": "0.0.3-development",
+  "version": "0.1.2-development",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {

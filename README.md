@@ -33,7 +33,9 @@ CONFLUENCE_EMAIL=your-email
 CONFLUENCE_API_TOKEN=your-api-token
 ```
 
-Then run a `npx @tobisk/confluence-tools pull` to download the current page content from confluence. Now edit the file as you please. (or `npm run confluence:download` for development)
+Then run a `npx @tobisk/confluence-tools download` to download the current page content from confluence. Now edit the file as you please. (or `npm run confluence:download` for development)
+
+![Tobisk Confluence Tools](https://github.com/kellertobias/confluence-toolbelt/raw/main/.docs/upload-example.png)
 
 Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to confluence. The upload command supports several modes:
 - **No arguments**: Uploads git-detected changes, or shows an interactive menu if no changes detected
@@ -42,8 +44,6 @@ Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to c
 - **`--verbose` flag**: Show detailed information about the upload process
 
 (or `npm run confluence:upload` for development)
-
-We will later support an additional command `npx @tobisk/confluence-tools sync` where we internally download the current page content before the upload and provide you with git diffing before the actual upload. For now, we suggest you to manually use git for being sure about your changes. (or `npm run confluence:sync` for development)
 
 You can also create a new page by running `npx @tobisk/confluence-tools create`. This will create a new markdown file in the current folder with the header and the page content. (or `npm run confluence:create` for development)
 
@@ -54,6 +54,8 @@ Run `npm run confluence:task` to create a new Jira issue (Task) via prompts:
 - Title
 - Content (multiline; press Ctrl+Enter to submit)
 - Assign to yourself (default Yes)
+
+It also can set default values for fields like Team, Project, etc. to avoid typing them every time.
 
 Required `.env` variables:
 
@@ -71,6 +73,7 @@ JIRA_ISSUE_TYPE=Task
 JIRA_PRIORITY=Medium
 JIRA_LABELS=docs,automation
 JIRA_COMPONENTS=Documentation
+JIRA_DEFAULT_FIELDS='{}' # Optional: default fields for the Jira issue
 ```
 
 ## Markdown Format

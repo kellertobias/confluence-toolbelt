@@ -12,11 +12,12 @@
 import { simpleGit, SimpleGit, StatusResult } from "simple-git";
 
 /**
- * List Markdown files changed in the working tree under the `docs/` folder.
+ * List Markdown files changed in the working tree.
  *
  * Notes:
  * - Uses `git.status()` which includes arrays for modified, created, and renamed.
- * - Restricts to paths that look like Markdown (`.md`/`.mdx`) and live in `docs/`.
+ * - Returns all Markdown files (`.md`/`.mdx`) that have changes in the working tree.
+ * - Paths returned are relative to the repository root.
  */
 export async function listChangedMarkdownFiles(cwd: string): Promise<string[]> {
   const git: SimpleGit = simpleGit({ baseDir: cwd });
@@ -27,7 +28,7 @@ export async function listChangedMarkdownFiles(cwd: string): Promise<string[]> {
     ...status.created,
     ...status.renamed.map((r) => r.to),
   ]) {
-    if (f && /\.mdx?$/.test(f) && f.startsWith("docs/")) candidates.add(f);
+    if (f && /\.mdx?$/.test(f)) candidates.add(f);
   }
   return Array.from(candidates);
 }

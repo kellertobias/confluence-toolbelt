@@ -94,11 +94,11 @@ export async function uploadAll(opts: Options): Promise<void> {
       if (!aChanged && bChanged) return 1;
       return a.localeCompare(b);
     });
-    const rel = sortedFiles.map((f) => path.relative(opts.cwd, f));
-    console.log(`[upload] Mode=${all ? "all" : explicitPaths.length > 0 ? "explicit" : "git"} candidates=${rel.length}`);
-    for (const r of rel) {
-      const isChanged = changedSet.has(path.resolve(opts.cwd, r));
-      console.log(`[upload]   ${isChanged ? "●" : "○"} ${r}`);
+    console.log(`[upload] Mode=${all ? "all" : explicitPaths.length > 0 ? "explicit" : "git"} candidates=${sortedFiles.length}`);
+    for (const f of sortedFiles) {
+      const isChanged = changedSet.has(f);
+      const relativePath = path.relative(opts.cwd, f);
+      console.log(`[upload]   ${isChanged ? "●" : "○"} ${relativePath}`);
     }
   }
   if (files.length === 0) { console.log("[upload] No candidate files"); return; }
