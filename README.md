@@ -35,13 +35,41 @@ CONFLUENCE_API_TOKEN=your-api-token
 
 Then run a `npx @tobisk/confluence-tools download` to download the current page content from confluence. Now edit the file as you please. (or `npm run confluence:download` for development)
 
+### Download from URL
+
+You can also download pages directly from Confluence URLs:
+
+```bash
+npx @tobisk/confluence-tools download https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title
+```
+
+Or using just the pageId:
+
+```bash
+npx @tobisk/confluence-tools download 123456
+```
+
+When downloading from a URL or pageId, the tool will:
+- Extract the pageId from the URL
+- Fetch page metadata from the Confluence API
+- Create a file named `YYMMDD-Title.md` where the date is the last published date
+- Automatically commit the file to git
+
+You can download multiple pages at once:
+
+```bash
+npx @tobisk/confluence-tools download URL1 URL2 URL3
+```
+
 ![Tobisk Confluence Tools](https://github.com/kellertobias/confluence-toolbelt/raw/main/.docs/upload-example.png)
 
 Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to confluence. The upload command supports several modes:
-- **No arguments**: Uploads git-detected changes, or shows an interactive menu if no changes detected
+- **No arguments**: Shows an interactive file selection menu (files with git changes appear first)
 - **`--all` flag**: Uploads all markdown files in the current folder and subfolders
 - **Explicit file paths**: Upload specific files, e.g., `upload docs/page1.md docs/page2.md`
 - **`--verbose` flag**: Show detailed information about the upload process
+
+The interactive menu shows all files with a `pageId` (excluding READONLY files), with changed files marked with ● and unchanged files with ○.
 
 (or `npm run confluence:upload` for development)
 
@@ -101,8 +129,23 @@ We also try to contain comments and mentions as well as possible, but this behav
 <!--
 spaceId: 123
 pageId: 456
+title: Page Title
+status: green:In Progress
 -->
 ```
+
+#### Optional Header Fields
+
+- **`READONLY`**: When this flag is present (must be first line after `<!--`), the file will be downloaded but never uploaded. Useful for reference pages that should not be modified locally.
+  ```
+  <!--
+  READONLY
+  spaceId: 123
+  pageId: 456
+  -->
+  ```
+- **`title`**: Override the page title (optional)
+- **`status`**: Add a status label to the page title in format `color:Label text`, e.g., `green:In Progress` (optional)
 
 ### Inline tag format (place immediately before a block you want to map)
 
@@ -119,6 +162,7 @@ pageId: 456
 
 ### Notes
 
+- **Automatic Git Commits**: Both download and upload commands automatically commit changes to git for version tracking. This keeps your git history in sync with Confluence.
 - Partial updates rely on inline tags and the presence of stable `data-node-id` attributes in storage HTML. If node IDs are missing or unmappable, the CLI falls back to full-page updates.
 - Review diffs after downloads and before uploads.
 
