@@ -1,3 +1,8 @@
+## <small>1.2.1 (2025-10-29)</small>
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([37acd7e](https://github.com/kellertobias/confluence-toolbelt/commit/37acd7e))
+* fix: is now able to correctly parse smart links ([8f3bbb3](https://github.com/kellertobias/confluence-toolbelt/commit/8f3bbb3))
+
 ## 1.2.0 (2025-10-29)
 
 * feat: add NO_AUTO_COMMIT option to disable automatic git commits ([489d8b6](https://github.com/kellertobias/confluence-toolbelt/commit/489d8b6))
