@@ -46,4 +46,52 @@ export async function getDiffForFile(cwd: string, filePath: string): Promise<str
   }
 }
 
+/**
+ * Commit a single file to git with a simple update message.
+ * 
+ * Why: Automatically track Confluence uploads in version control to maintain
+ * sync between local markdown and remote pages.
+ * 
+ * How: Stage the specific file and create a commit with format "update <filepath>".
+ * The filepath in the message is relative to the repo root for clarity.
+ * Skips files that are ignored by gitignore with a friendly notice.
+ * 
+ * @param cwd - Repository root directory
+ * @param filePath - Absolute path to the file to commit
+ */
+export async function commitFile(cwd: string, filePath: string): Promise<void> {
+  const git: SimpleGit = simpleGit({ baseDir: cwd });
+  const path = await import("path");
+  
+  // Get relative path from repo root for the commit message
+  const relativePath = path.relative(cwd, filePath);
+  
+  try {
+    // Check if file is ignored by gitignore before attempting to commit
+    const ignored = await git.checkIgnore(relativePath);
+    if (ignored && ignored.length > 0) {
+      console.log(`[git] Skipped commit (file ignored by .gitignore): ${relativePath}`);
+      return;
+    }
+    
+    // Stage the specific file
+    await git.add(relativePath);
+    
+    // Check if there are actually changes to commit
+    const status = await git.status();
+    const hasChanges = status.staged.length > 0;
+    
+    if (!hasChanges) {
+      // File has no changes, no need to commit
+      return;
+    }
+    
+    // Commit with the standardized message
+    await git.commit(`update ${relativePath}`);
+  } catch (err) {
+    // Log but don't throw - upload succeeded, commit failure is non-critical
+    console.warn(`[git] Failed to commit ${relativePath}:`, err instanceof Error ? err.message : err);
+  }
+}
+
 

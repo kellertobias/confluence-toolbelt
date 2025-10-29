@@ -7,7 +7,7 @@ import path from "path";
 import { fromEnv } from "../api.js";
 import { parseHeader } from "../md-header.js";
 import { parseBlocks } from "../inline-tags.js";
-import { listChangedMarkdownFiles } from "../git.js";
+import { listChangedMarkdownFiles, commitFile } from "../git.js";
 import { markdownToStorageHtml, replaceNodesById } from "../storage-dom.js";
 import enquirer from "enquirer";
 
@@ -70,7 +70,8 @@ export async function uploadAll(opts: Options): Promise<void> {
       console.log("[upload] No git changes detected.");
       console.log("[upload] You can also use: 'upload --all' or 'upload <file-path>'");
       console.log("");
-      files = await selectFilesInteractively(opts.cwd, candidates);
+      const changedFilePaths = (await listChangedMarkdownFiles(opts.cwd)).map((p) => path.resolve(opts.cwd, p));
+      files = await selectFilesInteractively(opts.cwd, candidates, new Set(changedFilePaths));
       if (files.length === 0) {
         console.log("[upload] No files selected");
         return;
@@ -82,10 +83,23 @@ export async function uploadAll(opts: Options): Promise<void> {
     /**
      * Print candidate files and selection strategy for transparency when requested.
      * Why: Speeds up debugging by showing exactly what will be considered for upload.
+     * How: Sort to show git-changed files first for better visibility.
      */
-    const rel = files.map((f) => path.relative(opts.cwd, f));
+    const changedFiles = (await listChangedMarkdownFiles(opts.cwd)).map((p) => path.resolve(opts.cwd, p));
+    const changedSet = new Set(changedFiles);
+    const sortedFiles = [...files].sort((a, b) => {
+      const aChanged = changedSet.has(a);
+      const bChanged = changedSet.has(b);
+      if (aChanged && !bChanged) return -1;
+      if (!aChanged && bChanged) return 1;
+      return a.localeCompare(b);
+    });
+    const rel = sortedFiles.map((f) => path.relative(opts.cwd, f));
     console.log(`[upload] Mode=${all ? "all" : explicitPaths.length > 0 ? "explicit" : "git"} candidates=${rel.length}`);
-    for (const r of rel) console.log(`[upload]   • ${r}`);
+    for (const r of rel) {
+      const isChanged = changedSet.has(path.resolve(opts.cwd, r));
+      console.log(`[upload]   ${isChanged ? "●" : "○"} ${r}`);
+    }
   }
   if (files.length === 0) { console.log("[upload] No candidate files"); return; }
 
@@ -173,6 +187,14 @@ export async function uploadAll(opts: Options): Promise<void> {
       await client.updatePageStorage(meta.pageId, fullHtml, version, effectiveTitle, meta.spaceId || spaceId);
     }
     console.log(`[upload] Updated page ${meta.pageId} from ${path.relative(opts.cwd, file)}`);
+    
+    /**
+     * Automatically commit the uploaded file to git for version tracking.
+     * Why: Keeps git history in sync with Confluence updates, making it easy to
+     * track what was uploaded and when.
+     * How: Stage and commit only this specific file with a standardized message.
+     */
+    await commitFile(opts.cwd, file);
   }
 }
 
@@ -181,21 +203,35 @@ export async function uploadAll(opts: Options): Promise<void> {
  * Why: When no changes are detected and no explicit paths provided, give users
  * a convenient way to choose files without typing full paths.
  * How: Use enquirer's multiselect prompt with relative paths for readability.
+ * Sort files so that those with git changes appear at the top for easy access.
  */
-async function selectFilesInteractively(cwd: string, candidates: string[]): Promise<string[]> {
+async function selectFilesInteractively(cwd: string, candidates: string[], changedFiles: Set<string>): Promise<string[]> {
   if (candidates.length === 0) return [];
 
-  // Build choices with relative paths for better UX
-  const choices = candidates.map((f) => ({
-    name: path.relative(cwd, f),
-    value: f,
-  }));
+  // Sort candidates to show changed files first
+  const sortedCandidates = [...candidates].sort((a, b) => {
+    const aChanged = changedFiles.has(a);
+    const bChanged = changedFiles.has(b);
+    if (aChanged && !bChanged) return -1;
+    if (!aChanged && bChanged) return 1;
+    return a.localeCompare(b);
+  });
+
+  // Build choices with relative paths and indicators for changed files
+  const choices = sortedCandidates.map((f) => {
+    const relativePath = path.relative(cwd, f);
+    const indicator = changedFiles.has(f) ? "● " : "○ ";
+    return {
+      name: indicator + relativePath,
+      value: f,
+    };
+  });
 
   try {
     const response = await prompt<{ files: string[] }>({
       type: "multiselect",
       name: "files",
-      message: "Select files to upload (space to select, enter to confirm)",
+      message: "Select files to upload (● = changed, ○ = unchanged | space to select, enter to confirm)",
       choices,
       initial: 0,
     } as any); // enquirer types are incomplete; limit and other options work at runtime
