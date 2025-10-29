@@ -9,7 +9,7 @@
     "jira"
   ],
   "homepage": "https://github.com/kellertobias/confluence-toolbelt",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {

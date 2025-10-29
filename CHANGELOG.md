@@ -1,3 +1,8 @@
+## <small>1.2.2 (2025-10-29)</small>
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([e995b9d](https://github.com/kellertobias/confluence-toolbelt/commit/e995b9d))
+* fix: enhance initialization process to commit .gitignore ([9c55c08](https://github.com/kellertobias/confluence-toolbelt/commit/9c55c08))
+
 ## <small>1.2.1 (2025-10-29)</small>
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([37acd7e](https://github.com/kellertobias/confluence-toolbelt/commit/37acd7e))
