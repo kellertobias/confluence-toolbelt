@@ -809,9 +809,14 @@ function getCellTextWithComments(cell: Element): string {
   let text = html.replace(/<[^>]+>/g, "");
   // Decode HTML entities
   text = decodeBasicEntities(text);
-  // Represent newlines as literal \n
-  text = text.replace(/\r?\n/g, "\\n");
-  // Normalize spaces around, but keep literal \n sequences intact
+  /**
+   * Convert actual newlines to spaces in table cells for single-line output.
+   * 
+   * Why: Table cells in markdown are single-line; newlines would break the table
+   * structure. We normalize multiple newlines/spaces to a single space for clean output.
+   */
+  text = text.replace(/\r?\n/g, " ");
+  // Normalize spaces around, collapsing multiple spaces to one
   text = text.replace(/[ \t]+/g, " ").trim();
   if (styleColor) {
     text = text.length ? `${text} <!-- cell:bg:${styleColor} -->` : `<!-- cell:bg:${styleColor} -->`;
@@ -894,8 +899,16 @@ function unescapeMarkdownUnderscores(md: string): string {
   out = out.replace(/\\{2,}_/g, "\\_");
   // Step 3: for asterisks, collapse multiple backslashes before '*' to a single backslash (avoid multiplying on round-trips)
   out = out.replace(/\\{2,}\*/g, "\\*");
-  // Step 4: unescape numbered-list leaders like "1\. " at start of line → "1. "
+  /**
+   * Step 4: unescape numbered enumerations with periods.
+   * 
+   * Why: Turndown may escape dots after numbers (e.g., `1\.`) to prevent
+   * unintended list interpretation. We unescape these in two contexts:
+   * - At start of line for numbered lists: `1\. Item` → `1. Item`
+   * - After header markers: `# 1\. Header` → `# 1. Header`
+   */
   out = out.replace(/^(\s*\d+)\\\./gm, '$1.');
+  out = out.replace(/^(#{1,6}\s+\d+)\\\./gm, '$1.');
   // Step 5: inside code regions (inline `code` and fenced ``` blocks), remove escapes before '*'
   out = unescapeAsterisksInsideCode(out);
   return out;
