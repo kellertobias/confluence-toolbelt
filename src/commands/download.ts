@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { fromEnv } from "../api.js";
 import { emitHeader, parseHeader } from "../md-header.js";
-import { storageToMarkdownBlocks, extractHeaderExtrasFromStorage } from "../storage-dom.js";
+import { storageToMarkdownBlocks, extractHeaderExtrasFromStorage, detectUnsupportedFeatures } from "../storage-dom.js";
 import { emitTag } from "../inline-tags.js";
 import { commitFile } from "../git.js";
 
@@ -162,6 +162,9 @@ export async function downloadAll(opts: Options): Promise<void> {
       }
     }
 
+    // Check for unsupported features before conversion
+    const unsupportedFeatures = detectUnsupportedFeatures(storageHtml);
+    
     const blocks = storageToMarkdownBlocks(storageHtml);
     // Join blocks and apply a final token decode pass for any durable tokens that might
     // have survived the per-block decoding (defensive against edge conversions)
@@ -189,6 +192,16 @@ export async function downloadAll(opts: Options): Promise<void> {
     } else {
       fs.writeFileSync(filePath, next, "utf8");
       console.log(`[download] Wrote ${relPath}`);
+      
+      /**
+       * Display warning if document uses unsupported features.
+       * Why: Users need to know that uploading this document back will lose
+       * certain formatting and layout features that cannot be represented in markdown.
+       */
+      if (unsupportedFeatures.length > 0) {
+        console.warn(`⚠️  Warning: This document uses unsupported features that will be lost on upload:`);
+        console.warn(`   ${unsupportedFeatures.join(", ")}`);
+      }
       
       /**
        * Automatically commit downloaded files to git for version tracking.
@@ -286,6 +299,9 @@ async function downloadFromUrl(
     }
   }
   
+  // Check for unsupported features before conversion
+  const unsupportedFeatures = detectUnsupportedFeatures(storageHtml);
+  
   // Convert storage HTML to markdown
   const blocks = storageToMarkdownBlocks(storageHtml);
   let body = blocks
@@ -317,6 +333,16 @@ async function downloadFromUrl(
   } else {
     fs.writeFileSync(filePath, next, "utf8");
     console.log(`[download] Wrote ${filename}`);
+    
+    /**
+     * Display warning if document uses unsupported features.
+     * Why: Users need to know that uploading this document back will lose
+     * certain formatting and layout features that cannot be represented in markdown.
+     */
+    if (unsupportedFeatures.length > 0) {
+      console.warn(`⚠️  Warning: This document uses unsupported features that will be lost on upload:`);
+      console.warn(`   ${unsupportedFeatures.join(", ")}`);
+    }
     
     // Commit to git
     await commitFile(cwd, filePath);

@@ -33,6 +33,90 @@ export interface MappedNode {
 }
 
 /**
+ * Detect unsupported Confluence features in storage HTML.
+ * 
+ * Why: Some Confluence layout and macro features cannot be properly represented
+ * in markdown. We need to warn users that uploading will lose these features.
+ * 
+ * How: Scan storage HTML for known unsupported patterns and return a list of
+ * feature names that would be lost on upload.
+ * 
+ * @param storageHtml - The Confluence storage HTML to analyze
+ * @returns Array of unsupported feature names found in the document
+ */
+export function detectUnsupportedFeatures(storageHtml: string): string[] {
+  const unsupported: string[] = [];
+  const html = storageHtml || "";
+  
+  // Multi-column layouts (section/column macros)
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:section|column)["']/i.test(html)) {
+    unsupported.push("multi-column layout");
+  }
+  
+  // Page layouts (ac:layout elements)
+  if (/<ac:layout\b/i.test(html)) {
+    unsupported.push("page layout");
+  }
+  
+  // Expand macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["']expand["']/i.test(html)) {
+    unsupported.push("expand/collapse sections");
+  }
+  
+  // Excerpt and excerpt-include macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:excerpt|excerpt-include)["']/i.test(html)) {
+    unsupported.push("excerpt macros");
+  }
+  
+  // Jira macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["']jira["']/i.test(html)) {
+    unsupported.push("Jira issue integration");
+  }
+  
+  // Include page macro
+  if (/<ac:structured-macro\b[^>]*\bac:name=["']include["']/i.test(html)) {
+    unsupported.push("page include");
+  }
+  
+  // Children display and page tree macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:children|pagetree|pagetreesearch)["']/i.test(html)) {
+    unsupported.push("page tree/children display");
+  }
+  
+  // Roadmap and timeline macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:roadmap|timeline)["']/i.test(html)) {
+    unsupported.push("roadmap/timeline");
+  }
+  
+  // Iframe and widget macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:iframe|widget|html)["']/i.test(html)) {
+    unsupported.push("embedded iframe/widget/HTML");
+  }
+  
+  // Advanced table features (colspan/rowspan)
+  if (/<t[hd]\b[^>]*\b(?:colspan|rowspan)=["']?[2-9]/i.test(html)) {
+    unsupported.push("merged table cells");
+  }
+  
+  // Chart and diagram macros
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:chart|drawio|gliffy|lucidchart)["']/i.test(html)) {
+    unsupported.push("charts/diagrams");
+  }
+  
+  // Attachments macro (list of attachments)
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:attachments|viewfile)["']/i.test(html)) {
+    unsupported.push("attachments list");
+  }
+  
+  // Content by label macro
+  if (/<ac:structured-macro\b[^>]*\bac:name=["'](?:contentbylabel|recentlyupdated)["']/i.test(html)) {
+    unsupported.push("dynamic content display");
+  }
+  
+  return unsupported;
+}
+
+/**
  * Convert storage HTML into an ordered list of mappable blocks. Each block
  * corresponds to a top-level DOM child node and carries its `data-node-id`
  * when present. This enables targeted partial updates by node ID.
@@ -532,8 +616,45 @@ function inlineHtml(s: string): string {
   out = out.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
   // Bold
   out = out.replace(/\*\*([^*]+)\*\*/g, (_m, inner) => `<strong>${inner}</strong>`);
-  // Links
-  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `<a href="${escapeHtml(String(href))}">${text}</a>`);
+  /**
+   * Convert markdown links to appropriate Confluence storage format.
+   * 
+   * Why: Different link types in Confluence use different storage formats.
+   * We need to detect special schemes (page:, #attachment:) and convert them
+   * to the appropriate Confluence <ac:link> format.
+   * 
+   * How: Match markdown links and check the href for special prefixes:
+   * - page:... → <ac:link><ri:page>
+   * - #attachment:... → <ac:link><ri:attachment>
+   * - regular URLs → <a href="...">
+   */
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
+    const hrefStr = String(href || "");
+    
+    // Page links: [text](page:PageTitle) or [text](page:SPACE:PageTitle)
+    if (hrefStr.startsWith('page:')) {
+      const pageRef = hrefStr.slice(5); // Remove "page:" prefix
+      const parts = pageRef.split(':');
+      if (parts.length >= 2 && parts[0]) {
+        // Format: page:SPACE:Title
+        const spaceKey = parts[0];
+        const contentTitle = parts.slice(1).join(':');
+        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(contentTitle)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+      } else {
+        // Format: page:Title (no space key)
+        return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+      }
+    }
+    
+    // Attachment links: [text](#attachment:filename.pdf)
+    if (hrefStr.startsWith('#attachment:')) {
+      const filename = hrefStr.slice(12); // Remove "#attachment:" prefix
+      return `<ac:link><ri:attachment ri:filename="${escapeHtml(filename)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+    }
+    
+    // Regular links: [text](url)
+    return `<a href="${escapeHtml(hrefStr)}">${text}</a>`;
+  });
   // Restore literal asterisks
   out = out.replace(/MD_ESC_STAR/g, '*');
   return out;
@@ -651,19 +772,83 @@ function normalizeMacros(html: string): string {
     return `MD_STATUS(${encColor})[${encTitle}]`;
   });
 
-  // Mentions (user) → durable token. Matches <ac:link> containing <ri:user ... />
+  /**
+   * Convert Confluence <ac:link> elements to appropriate tokens or markdown.
+   * 
+   * Why: Confluence uses <ac:link> for various link types: user mentions, page links,
+   * attachment links, and external URLs. We need to preserve these during markdown
+   * conversion and restore them on upload.
+   * 
+   * How: Match different <ri:*> resource identifiers within <ac:link> elements and
+   * convert to appropriate tokens (mentions) or markdown links (pages, attachments, URLs).
+   */
   out = out.replace(/<ac:link\b[^>]*>([\s\S]*?)<\/ac:link>/gi, (m, inner) => {
-    const userMatch = String(inner || '').match(/<ri:user[^>]*>/i);
-    if (!userMatch) return m;
-    const acc = String(inner || '').match(/ri:account-id=["']([^"']+)["']/i)?.[1]
-      || String(inner || '').match(/ri:userkey=["']([^"']+)["']/i)?.[1]
-      || String(inner || '').match(/ri:username=["']([^"']+)["']/i)?.[1]
-      || '';
-    // Attempt to get any visible text fallback
-    const visible = String(inner || '').replace(/<[^>]+>/g, '').trim();
-    const encId = encodeURIComponent(acc);
-    const encVis = encodeURIComponent(visible);
-    return `MD_MENTION(${encId})[${encVis}]`;
+    const innerStr = String(inner || '');
+    
+    // User mentions → durable token
+    const userMatch = innerStr.match(/<ri:user[^>]*>/i);
+    if (userMatch) {
+      const acc = innerStr.match(/ri:account-id=["']([^"']+)["']/i)?.[1]
+        || innerStr.match(/ri:userkey=["']([^"']+)["']/i)?.[1]
+        || innerStr.match(/ri:username=["']([^"']+)["']/i)?.[1]
+        || '';
+      const visible = innerStr.replace(/<[^>]+>/g, '').trim();
+      const encId = encodeURIComponent(acc);
+      const encVis = encodeURIComponent(visible);
+      return `MD_MENTION(${encId})[${encVis}]`;
+    }
+    
+    // Page links → token (decoded to markdown after turndown)
+    const pageMatch = innerStr.match(/<ri:page[^>]*>/i);
+    if (pageMatch) {
+      const contentTitle = innerStr.match(/ri:content-title=["']([^"']+)["']/i)?.[1] || '';
+      const spaceKey = innerStr.match(/ri:space-key=["']([^"']+)["']/i)?.[1] || '';
+      // Extract link body separately (not tied to ri:page position)
+      const linkBodyMatch = innerStr.match(/<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i)
+        || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+      const linkBody = linkBodyMatch?.[1] || '';
+      // Extract visible text (strip tags and decode CDATA)
+      const linkText = linkBody.replace(/<[^>]+>/g, '').trim() || contentTitle;
+      // Build page reference
+      const pageRef = spaceKey ? `page:${spaceKey}:${contentTitle}` : `page:${contentTitle}`;
+      const encRef = encodeURIComponent(pageRef);
+      const encText = encodeURIComponent(linkText);
+      // Use token format to avoid turndown escaping
+      return `MD_PAGE_LINK~~${encRef}~~${encText}~~END`;
+    }
+    
+    // Attachment links → token (decoded to markdown after turndown)
+    const attachMatch = innerStr.match(/<ri:attachment[^>]*>/i);
+    if (attachMatch) {
+      const filename = innerStr.match(/ri:filename=["']([^"']+)["']/i)?.[1] || '';
+      // Extract link body separately
+      const linkBodyMatch = innerStr.match(/<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i)
+        || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+      const linkBody = linkBodyMatch?.[1] || '';
+      const linkText = linkBody.replace(/<[^>]+>/g, '').trim() || filename;
+      const encFilename = encodeURIComponent(filename);
+      const encText = encodeURIComponent(linkText);
+      // Use token format to avoid turndown escaping
+      return `MD_ATTACH_LINK~~${encFilename}~~${encText}~~END`;
+    }
+    
+    // URL links within ac:link → token (decoded to markdown after turndown)
+    const urlMatch = innerStr.match(/<ri:url[^>]*>/i);
+    if (urlMatch) {
+      const url = innerStr.match(/ri:value=["']([^"']+)["']/i)?.[1] || '';
+      // Extract link body separately
+      const linkBodyMatch = innerStr.match(/<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i)
+        || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+      const linkBody = linkBodyMatch?.[1] || '';
+      const linkText = linkBody.replace(/<[^>]+>/g, '').trim() || url;
+      const encUrl = encodeURIComponent(url);
+      const encText = encodeURIComponent(linkText);
+      // Use token format to avoid turndown escaping
+      return `MD_URL_LINK~~${encUrl}~~${encText}~~END`;
+    }
+    
+    // Unknown link type - preserve as-is
+    return m;
   });
 
   // Info/Note/Warning/Tip/Panel macros → MD_PANEL token with color/icon and body
@@ -839,6 +1024,37 @@ function decodeMdCommentTokens(s: string): string {
     // Inline comment start/end markers to markdown wrapper comments
     .replace(/MD(?:\\)?_CMT_START\(([^)]+)\)/g, (_m, enc) => `<!-- comment:${decodeURIComponent(String(enc || ''))} -->`)
     .replace(/MD(?:\\)?_CMT_END\(([^)]+)\)/g, (_m, enc) => `<!-- commend-end:${decodeURIComponent(String(enc || ''))} -->`)
+    /**
+     * Convert page link tokens to markdown links.
+     * 
+     * Why: Preserve Confluence page links as readable markdown that can be round-tripped.
+     * Format: MD_PAGE_LINK~~page%3A...~~text...~~END → [text](page:...)
+     */
+    .replace(/MD(?:\\)?_PAGE(?:\\)?_LINK~~([^~]+)~~([^~]+)~~END/g, (_m, refEnc, textEnc) => {
+      const pageRef = decodeURIComponent(String(refEnc || ""));
+      const linkText = decodeURIComponent(String(textEnc || ""));
+      return `[${linkText}](${pageRef})`;
+    })
+    /**
+     * Convert attachment link tokens to markdown links.
+     * 
+     * Format: MD_ATTACH_LINK~~filename...~~text...~~END → [text](#attachment:filename)
+     */
+    .replace(/MD(?:\\)?_ATTACH(?:\\)?_LINK~~([^~]+)~~([^~]+)~~END/g, (_m, filenameEnc, textEnc) => {
+      const filename = decodeURIComponent(String(filenameEnc || ""));
+      const linkText = decodeURIComponent(String(textEnc || ""));
+      return `[${linkText}](#attachment:${filename})`;
+    })
+    /**
+     * Convert URL link tokens to markdown links.
+     * 
+     * Format: MD_URL_LINK~~url...~~text...~~END → [text](url)
+     */
+    .replace(/MD(?:\\)?_URL(?:\\)?_LINK~~([^~]+)~~([^~]+)~~END/g, (_m, urlEnc, textEnc) => {
+      const url = decodeURIComponent(String(urlEnc || ""));
+      const linkText = decodeURIComponent(String(textEnc || ""));
+      return `[${linkText}](${url})`;
+    })
     
     .replace(/MD(?:\\)?_PANEL\(([^,)]*),([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g, (_m, colorEnc, iconEnc, bodyEnc) => {
       const color = decodeURIComponent(String(colorEnc || "")) || "info";
