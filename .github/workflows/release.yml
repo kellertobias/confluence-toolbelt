@@ -35,9 +35,9 @@ jobs:
               run: npm ci
 
             # semantic-release runs from the repo root; build is triggered by .releaserc (prepare step)
+            # NODE_AUTH_TOKEN is used by setup-node for npm authentication
             - name: Run semantic-release
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
               run: npx semantic-release --repository-url "${{ github.server_url }}/${{ github.repository }}.git"

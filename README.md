@@ -4,7 +4,7 @@
 
 This repository contains the required tools to download Confluence pages as markdown files, let Cursor or other AI agents edit the pages, and then upload the changes back to Confluence including preserving (most) comments and mentions.
 
-⚠️ This tool is completely Vibe coded in an afternoon and might be buggy. Use at your own risk.
+⚠️ This tool is completely Vibe coded in an afternoon. The code looks terrible and might be buggy. But it solves the problem I needed it for and the engineers in my company love it. Use at your own risk.
 
 ## Usage and Use Cases
 
@@ -49,13 +49,20 @@ Or using just the pageId:
 npx @tobisk/confluence-tools download 123456
 ```
 
+**Custom file path:** Specify where to save the file as a second argument:
+
+```bash
+npx @tobisk/confluence-tools download https://... docs/my-page.md
+npx @tobisk/confluence-tools download 123456 path/to/file.md
+```
+
 When downloading from a URL or pageId, the tool will:
 - Extract the pageId from the URL
 - Fetch page metadata from the Confluence API
-- Create a file named `YYMMDD-Title.md` where the date is the last published date
+- Create a file named `YYMMDD-Title.md` (or use your custom path if provided) where the date is the last published date
 - Automatically commit the file to git
 
-You can download multiple pages at once:
+You can download multiple pages at once (without custom paths):
 
 ```bash
 npx @tobisk/confluence-tools download URL1 URL2 URL3
