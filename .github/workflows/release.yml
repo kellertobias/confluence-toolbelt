@@ -40,3 +40,19 @@ jobs:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
               run: npx semantic-release --repository-url "${{ github.server_url }}/${{ github.repository }}.git"
+
+    show-token:
+        name: Inspect NPM token (first/last char)
+        runs-on: ubuntu-latest
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        steps:
+            - name: Print first and last character of NPM_TOKEN
+              env:
+                  TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: |
+                  if [ -z "$TOKEN" ]; then
+                      echo "NPM_TOKEN is empty"; exit 1; fi
+                  first_char="${TOKEN:0:1}"
+                  last_char="$(printf %s "$TOKEN" | tail -c 1)"
+                  echo "First char: $first_char"
+                  echo "Last char: $last_char"
