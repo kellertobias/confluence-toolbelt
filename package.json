@@ -2,9 +2,9 @@
   "name": "@tobisk/confluence-tools",
   "version": "0.0.0-development",
   "type": "module",
-  "main": "dist/tools/confluence/cli.js",
+  "main": "dist/cli.js",
   "bin": {
-    "confluence-tools": "dist/tools/confluence/cli.js"
+    "confluence-tools": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -14,15 +14,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "scripts": {
-    "confluence:init": "tsx tools/confluence/cli.ts init",
-    "confluence:download": "tsx tools/confluence/cli.ts download",
-    "confluence:upload": "tsx tools/confluence/cli.ts upload",
-    "confluence:create": "tsx tools/confluence/cli.ts create",
-    "confluence:task": "tsx tools/confluence/cli.ts task",
-    "test:unit": "vitest run"
-  },
-  "author": "",
+  "author": "Tobias S. Keller",
   "license": "MIT",
   "description": "",
   "engines": {
@@ -54,11 +46,11 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "confluence:init": "tsx tools/confluence/cli.ts init",
-    "confluence:download": "tsx tools/confluence/cli.ts download",
-    "confluence:upload": "tsx tools/confluence/cli.ts upload",
-    "confluence:create": "tsx tools/confluence/cli.ts create",
-    "confluence:task": "tsx tools/confluence/cli.ts task",
+    "confluence:init": "tsx src/cli.ts init",
+    "confluence:download": "tsx src/cli.ts download",
+    "confluence:upload": "tsx src/cli.ts upload",
+    "confluence:create": "tsx src/cli.ts create",
+    "confluence:task": "tsx src/cli.ts task",
     "test:unit": "vitest run"
   }
 }

@@ -9,10 +9,11 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "rootDir": "src",
     "outDir": "dist",
     "baseUrl": "."
   },
-  "include": ["tools/**/*.ts", "tools/**/*.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
 

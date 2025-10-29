@@ -1,8 +1,10 @@
+![Tobisk Confluence Tools](/.docs/header.png)
+
 # Toolbelt for AI Assisted Confluence Page Editing
 
-This repository contains the required tools to edit Confluence pages offline, let Cursor or other AI agents edit the pages, and then upload the changes back to Confluence.
+This repository contains the required tools to download Confluence pages as markdown files, let Cursor or other AI agents edit the pages, and then upload the changes back to Confluence including preserving (most) comments and mentions.
 
-This tool is completely Vibe coded in an afternoon and might be buggy. Use at your own risk.
+⚠️ This tool is completely Vibe coded in an afternoon and might be buggy. Use at your own risk.
 
 ## Usage and Use Cases
 
