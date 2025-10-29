@@ -1,5 +1,14 @@
 {
   "name": "@tobisk/confluence-tools",
+  "description": "Toolbelt for AI Assisted Confluence Page Editing",
+  "keywords": [
+    "confluence",
+    "ai",
+    "tools",
+    "markdown",
+    "jira"
+  ],
+  "homepage": "https://github.com/kellertobias/confluence-toolbelt",
   "version": "0.1.2-development",
   "type": "module",
   "main": "dist/cli.js",
@@ -8,19 +17,20 @@
   },
   "files": [
     "dist",
-    ".docs",
     "README.md",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "author": "Tobias S. Keller",
+  "author": {
+    "name": "Tobias S. Keller",
+    "url": "https://tobisk.de"
+  },
   "license": "MIT",
-  "description": "",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tobisk/confluence-toolbelt.git"
+    "url": "https://github.com/kellertobias/confluence-toolbelt.git"
   },
   "engines": {
     "node": ">=18"
