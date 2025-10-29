@@ -56,11 +56,18 @@ export async function getDiffForFile(cwd: string, filePath: string): Promise<str
  * How: Stage the specific file and create a commit with format "update <filepath>".
  * The filepath in the message is relative to the repo root for clarity.
  * Skips files that are ignored by gitignore with a friendly notice.
+ * Respects NO_AUTO_COMMIT environment variable to allow disabling auto-commits.
  * 
  * @param cwd - Repository root directory
  * @param filePath - Absolute path to the file to commit
  */
 export async function commitFile(cwd: string, filePath: string): Promise<void> {
+  // Check if auto-commits are disabled via environment variable
+  if (process.env.NO_AUTO_COMMIT) {
+    console.log(`[git] Skipped commit (NO_AUTO_COMMIT is set): ${filePath}`);
+    return;
+  }
+  
   const git: SimpleGit = simpleGit({ baseDir: cwd });
   const path = await import("path");
   

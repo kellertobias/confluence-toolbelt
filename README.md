@@ -165,11 +165,12 @@ status: green:In Progress
 - `CONFLUENCE_BASE_URL` (or `CONFLUENCE_URL`)
 - `CONFLUENCE_EMAIL`
 - `CONFLUENCE_API_TOKEN`
+- `NO_AUTO_COMMIT` (optional) - When set (to any value), disables automatic git commits after download and upload operations
 
 
 ### Notes
 
-- **Automatic Git Commits**: Both download and upload commands automatically commit changes to git for version tracking. This keeps your git history in sync with Confluence.
+- **Automatic Git Commits**: Both download and upload commands automatically commit changes to git for version tracking. This keeps your git history in sync with Confluence. To disable this behavior, set the `NO_AUTO_COMMIT` environment variable (e.g., `export NO_AUTO_COMMIT=1` or `NO_AUTO_COMMIT=1 npx @tobisk/confluence-tools upload`).
 - Partial updates rely on inline tags and the presence of stable `data-node-id` attributes in storage HTML. If node IDs are missing or unmappable, the CLI falls back to full-page updates.
 - Review diffs after downloads and before uploads.
 
