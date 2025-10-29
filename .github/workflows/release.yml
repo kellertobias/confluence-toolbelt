@@ -1,33 +1,40 @@
 name: Release
 
+# This workflow publishes new releases to npm and GitHub using semantic-release.
+# It must run from the repository root so that @semantic-release/npm can find package.json.
+
 on:
     push:
         branches:
             - main
+    workflow_dispatch:
 
 permissions:
-    contents: write
-    issues: write
+    contents: write # create tags and GitHub releases
+    issues: write # comment on issues
     pull-requests: write
 
 jobs:
     release:
+        name: Semantic Release
         runs-on: ubuntu-latest
         steps:
-            - name: Checkout
+            - name: Checkout repository
               uses: actions/checkout@v4
               with:
-                  fetch-depth: 0
+                  fetch-depth: 0 # required for semantic-release to analyze commits
 
-            - name: Use Node.js
+            - name: Setup Node.js
               uses: actions/setup-node@v4
               with:
                   node-version: "20"
+                  registry-url: "https://registry.npmjs.org"
 
             - name: Install dependencies
               run: npm ci
 
-            - name: Release
+            # semantic-release runs from the repo root; build is triggered by .releaserc (prepare step)
+            - name: Run semantic-release
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
