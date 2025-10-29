@@ -10,9 +10,10 @@ on:
     workflow_dispatch:
 
 permissions:
-    contents: write # create tags and GitHub releases
-    issues: write # comment on issues
-    pull-requests: write
+    contents: write # to be able to publish a GitHub release
+    issues: write # to be able to comment on released issues
+    pull-requests: write # to be able to comment on released pull requests
+    id-token: write # to enable use of OIDC for trusted publishing and npm provenance
 
 jobs:
     release:
@@ -40,18 +41,3 @@ jobs:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
               run: npx semantic-release --repository-url "${{ github.server_url }}/${{ github.repository }}.git"
-
-    show-token:
-        name: Inspect NPM token (first/last char)
-        runs-on: ubuntu-latest
-        steps:
-            - name: Print first and last character of NPM_TOKEN
-              env:
-                  TOKEN: ${{ secrets.NPM_TOKEN }}
-              run: |
-                  if [ -z "$TOKEN" ]; then
-                      echo "NPM_TOKEN is empty"; exit 1; fi
-                  first_char="${TOKEN:0:1}"
-                  last_char="$(printf %s "$TOKEN" | tail -c 1)"
-                  echo "First char: $first_char"
-                  echo "Last char: $last_char"
