@@ -1,3 +1,9 @@
+## 1.1.0 (2025-10-29)
+
+* feat: enhance download functionality and README updates ([6bbf24c](https://github.com/kellertobias/confluence-toolbelt/commit/6bbf24c))
+* feat: enhance README and CLI with new download and upload features ([6072bac](https://github.com/kellertobias/confluence-toolbelt/commit/6072bac))
+* chore: update semantic release configuration in .releaserc.json ([e9b6b12](https://github.com/kellertobias/confluence-toolbelt/commit/e9b6b12))
+
 ## 1.0.0 (2025-10-29)
 
 * fix: don't do unnecessary escapes and newlines ([2d638c0](https://github.com/kellertobias/confluence-toolbelt/commit/2d638c0))
