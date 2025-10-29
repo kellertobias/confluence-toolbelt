@@ -1,14 +1,17 @@
 /**
- * Initialize local environment by creating a commented .env file.
+ * Initialize local environment by creating a commented .env file, initializing
+ * git repository, and setting up .gitignore.
  *
  * Why: Provide a quick start so users can run commands without hunting
- * required environment variable names and formats.
- * How: Writes a `.env` in the current working directory if missing and
- * appends any missing keys with helpful inline comments if present.
+ * required environment variable names and formats. Also ensure proper git setup
+ * to prevent accidental credential commits.
+ * How: Writes a `.env` in the current working directory if missing, initializes
+ * git repo if needed, creates/updates .gitignore to protect sensitive files.
  */
 
 import fs from "fs";
 import path from "path";
+import { simpleGit } from "simple-git";
 
 interface Options { cwd: string }
 
@@ -48,12 +51,83 @@ function renderEnvTemplate(): string {
 }
 
 /**
+ * Initialize git repository in the current directory.
+ * Why: Ensure version control is set up for tracking document changes.
+ * How: Check if .git exists; if not, run git init.
+ */
+async function initGitRepo(opts: Options): Promise<void> {
+  const gitDir = path.resolve(opts.cwd, ".git");
+  
+  if (fs.existsSync(gitDir)) {
+    console.log(`[init] Git repository already initialized`);
+    return;
+  }
+
+  const git = simpleGit({ baseDir: opts.cwd });
+  await git.init();
+  console.log(`[init] Initialized git repository`);
+}
+
+/**
+ * Create or update .gitignore to include .env and other sensitive files.
+ * Why: Prevent accidental commit of credentials and local configuration.
+ * How: Create .gitignore if missing, then ensure .env is listed.
+ */
+function ensureGitignore(opts: Options): void {
+  const gitignorePath = path.resolve(opts.cwd, ".gitignore");
+  const entriesToAdd = [".env"];
+  
+  if (!fs.existsSync(gitignorePath)) {
+    // Create new .gitignore with recommended entries
+    const content = [
+      "# Environment variables (credentials)",
+      ".env",
+      "",
+      "# Node modules",
+      "node_modules/",
+      "",
+      "# Build output",
+      "dist/",
+      "",
+      "# OS files",
+      ".DS_Store",
+      "Thumbs.db",
+      "",
+    ].join("\n");
+    fs.writeFileSync(gitignorePath, content, "utf8");
+    console.log(`[init] Created .gitignore`);
+    return;
+  }
+
+  // Check existing .gitignore and add missing entries
+  const existing = fs.readFileSync(gitignorePath, "utf8");
+  const lines = existing.split(/\r?\n/);
+  const existingEntries = new Set(
+    lines
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"))
+  );
+
+  const missing = entriesToAdd.filter((e) => !existingEntries.has(e));
+  
+  if (missing.length > 0) {
+    const updated = existing.replace(/\s*$/, "\n") + 
+      "\n# Added by confluence-tools init\n" + 
+      missing.join("\n") + "\n";
+    fs.writeFileSync(gitignorePath, updated, "utf8");
+    console.log(`[init] Added ${missing.join(", ")} to .gitignore`);
+  } else {
+    console.log(`[init] .gitignore already contains .env`);
+  }
+}
+
+/**
  * Create or update the .env file in the given directory.
  * - If it doesn't exist, write the full template.
  * - If it exists, append any missing top-level keys to avoid clobbering
  *   user customizations.
  */
-export async function initEnv(opts: Options): Promise<void> {
+function createOrUpdateEnv(opts: Options): void {
   const envPath = path.resolve(opts.cwd, ".env");
   const template = renderEnvTemplate();
 
@@ -121,6 +195,22 @@ export async function initEnv(opts: Options): Promise<void> {
   } else {
     console.log(`[init] .env already contains all known keys`);
   }
+}
+
+/**
+ * Main initialization function: set up git, .gitignore, and .env.
+ * Why: Provide complete project initialization in one command.
+ * How: Orchestrate git init, .gitignore creation, and .env setup.
+ */
+export async function initEnv(opts: Options): Promise<void> {
+  // 1. Initialize git repository
+  await initGitRepo(opts);
+  
+  // 2. Ensure .gitignore exists and contains .env
+  ensureGitignore(opts);
+  
+  // 3. Create or update .env file
+  createOrUpdateEnv(opts);
 }
 
 

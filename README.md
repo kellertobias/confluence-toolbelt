@@ -1,4 +1,4 @@
-![Tobisk Confluence Tools](/.docs/header.png)
+![Tobisk Confluence Tools](https://github.com/kellertobias/confluence-toolbelt/raw/main/.docs/header.png)
 
 # Toolbelt for AI Assisted Confluence Page Editing
 
@@ -8,7 +8,11 @@ This repository contains the required tools to download Confluence pages as mark
 
 ## Usage and Use Cases
 
-Initialize your local environment by running `npx @tobisk/confluence-tools init`. This will create a .env file in the current folder with the required variables and some comments what they are required for.
+Initialize your local environment by running `npx @tobisk/confluence-tools init`. This will:
+- Initialize a git repository (if not already initialized)
+- Create a `.gitignore` file with recommended entries
+- Create a `.env` file with required variables and helpful comments
+- Ensure `.env` is added to `.gitignore` to prevent credential leaks
 
 ### AI Assisted Editing/ Offline Editing
 
@@ -31,7 +35,13 @@ CONFLUENCE_API_TOKEN=your-api-token
 
 Then run a `npx @tobisk/confluence-tools pull` to download the current page content from confluence. Now edit the file as you please. (or `npm run confluence:download` for development)
 
-Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to confluence. (or `npm run confluence:upload` for development)
+Then run a `npx @tobisk/confluence-tools upload` to upload the changes back to confluence. The upload command supports several modes:
+- **No arguments**: Uploads git-detected changes, or shows an interactive menu if no changes detected
+- **`--all` flag**: Uploads all markdown files in the current folder and subfolders
+- **Explicit file paths**: Upload specific files, e.g., `upload docs/page1.md docs/page2.md`
+- **`--verbose` flag**: Show detailed information about the upload process
+
+(or `npm run confluence:upload` for development)
 
 We will later support an additional command `npx @tobisk/confluence-tools sync` where we internally download the current page content before the upload and provide you with git diffing before the actual upload. For now, we suggest you to manually use git for being sure about your changes. (or `npm run confluence:sync` for development)
 

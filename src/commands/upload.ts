@@ -9,6 +9,9 @@ import { parseHeader } from "../md-header.js";
 import { parseBlocks } from "../inline-tags.js";
 import { listChangedMarkdownFiles } from "../git.js";
 import { markdownToStorageHtml, replaceNodesById } from "../storage-dom.js";
+import enquirer from "enquirer";
+
+const { prompt } = enquirer;
 
 interface Options { cwd: string; args?: string[] }
 
@@ -18,30 +21,70 @@ export async function uploadAll(opts: Options): Promise<void> {
   const verbose = args.includes("--verbose");
   const client = fromEnv();
 
+  /**
+   * Determine which files to upload based on provided arguments.
+   * Priority:
+   * 1. --all flag → upload all markdown files
+   * 2. Explicit file paths → upload those specific files
+   * 3. Git-detected changes → upload modified files
+   * 4. Interactive menu → let user select from available files
+   */
   let files: string[] = [];
+  
+  // Extract file paths from args (anything that's not a flag)
+  const explicitPaths = args.filter((a) => !a.startsWith("--"));
+  
   if (all) {
+    // Mode 1: Upload all markdown files
     files = walkMarkdown(opts.cwd);
+  } else if (explicitPaths.length > 0) {
+    // Mode 2: Upload explicitly specified files
+    files = explicitPaths.map((p) => {
+      const abs = path.isAbsolute(p) ? p : path.resolve(opts.cwd, p);
+      if (!fs.existsSync(abs)) {
+        throw new Error(`File not found: ${p}`);
+      }
+      return abs;
+    });
   } else {
+    // Mode 3 & 4: Git-detected changes or interactive menu
     files = (await listChangedMarkdownFiles(opts.cwd)).map((p) => path.resolve(opts.cwd, p));
-    // Fallback: if git shows no changes, include all headered markdown files
+    
     if (files.length === 0) {
+      // No git changes detected, collect all markdown files with pageId
       const allMd = walkMarkdown(opts.cwd);
-      files = allMd.filter((f) => {
+      const candidates = allMd.filter((f) => {
         try {
           const txt = fs.readFileSync(f, "utf8");
           const { meta } = parseHeader(txt);
           return !!meta.pageId;
         } catch { return false; }
       });
+
+      if (candidates.length === 0) {
+        console.log("[upload] No candidate files found");
+        return;
+      }
+
+      // Mode 4: Show interactive menu for file selection
+      console.log("[upload] No git changes detected.");
+      console.log("[upload] You can also use: 'upload --all' or 'upload <file-path>'");
+      console.log("");
+      files = await selectFilesInteractively(opts.cwd, candidates);
+      if (files.length === 0) {
+        console.log("[upload] No files selected");
+        return;
+      }
     }
   }
+
   if (verbose) {
     /**
      * Print candidate files and selection strategy for transparency when requested.
      * Why: Speeds up debugging by showing exactly what will be considered for upload.
      */
     const rel = files.map((f) => path.relative(opts.cwd, f));
-    console.log(`[upload] Mode=${all ? "all" : "git"} candidates=${rel.length}`);
+    console.log(`[upload] Mode=${all ? "all" : explicitPaths.length > 0 ? "explicit" : "git"} candidates=${rel.length}`);
     for (const r of rel) console.log(`[upload]   • ${r}`);
   }
   if (files.length === 0) { console.log("[upload] No candidate files"); return; }
@@ -130,6 +173,36 @@ export async function uploadAll(opts: Options): Promise<void> {
       await client.updatePageStorage(meta.pageId, fullHtml, version, effectiveTitle, meta.spaceId || spaceId);
     }
     console.log(`[upload] Updated page ${meta.pageId} from ${path.relative(opts.cwd, file)}`);
+  }
+}
+
+/**
+ * Present an interactive menu to let users select which files to upload.
+ * Why: When no changes are detected and no explicit paths provided, give users
+ * a convenient way to choose files without typing full paths.
+ * How: Use enquirer's multiselect prompt with relative paths for readability.
+ */
+async function selectFilesInteractively(cwd: string, candidates: string[]): Promise<string[]> {
+  if (candidates.length === 0) return [];
+
+  // Build choices with relative paths for better UX
+  const choices = candidates.map((f) => ({
+    name: path.relative(cwd, f),
+    value: f,
+  }));
+
+  try {
+    const response = await prompt<{ files: string[] }>({
+      type: "multiselect",
+      name: "files",
+      message: "Select files to upload (space to select, enter to confirm)",
+      choices,
+      initial: 0,
+    } as any); // enquirer types are incomplete; limit and other options work at runtime
+    return response.files || [];
+  } catch (err) {
+    // User cancelled (Ctrl+C) or other error
+    return [];
   }
 }
 
