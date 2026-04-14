@@ -1,3 +1,10 @@
+## <small>1.2.5 (2026-04-14)</small>
+
+* fix: release ([83695d5](https://github.com/kellertobias/confluence-toolbelt/commit/83695d5))
+* chore: refine semantic-release configuration and GitHub Actions ([0cb2dc5](https://github.com/kellertobias/confluence-toolbelt/commit/0cb2dc5))
+* chore: update GitHub Actions workflow to include build step ([85bfe76](https://github.com/kellertobias/confluence-toolbelt/commit/85bfe76))
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([f21943c](https://github.com/kellertobias/confluence-toolbelt/commit/f21943c))
+
 ## <small>1.2.4 (2026-04-14)</small>
 
 * chore: enhance semantic-release configuration ([6196134](https://github.com/kellertobias/confluence-toolbelt/commit/6196134))
