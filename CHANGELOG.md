@@ -1,3 +1,7 @@
+## <small>1.2.3 (2025-10-29)</small>
+
+* fix: update readme for final release version ([4b18929](https://github.com/kellertobias/confluence-toolbelt/commit/4b18929))
+
 ## <small>1.2.2 (2025-10-29)</small>
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([e995b9d](https://github.com/kellertobias/confluence-toolbelt/commit/e995b9d))
