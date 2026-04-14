@@ -6,12 +6,14 @@
  * Jira Cloud REST API v3 to create the issue, then optionally assigns to self.
  */
 
-import { prompt } from "enquirer";
-import readline from "readline";
-import { execFile, spawn } from "node:child_process";
-import os from "node:os";
+import { execFile, spawn } from 'node:child_process';
+import os from 'node:os';
+import readline from 'node:readline';
+import { prompt } from 'enquirer';
 
-interface Options { cwd: string }
+interface Options {
+  cwd: string;
+}
 
 /**
  * Build the authorization headers for Jira Cloud using either Basic auth
@@ -26,11 +28,11 @@ function buildAuthHeaders(): Record<string, string> {
     return { Authorization: `Bearer ${accessToken}` };
   }
   if (email && apiToken) {
-    const basic = Buffer.from(`${email}:${apiToken}`).toString("base64");
+    const basic = Buffer.from(`${email}:${apiToken}`).toString('base64');
     return { Authorization: `Basic ${basic}` };
   }
   throw new Error(
-    "Jira auth not configured. Set JIRA_ACCESS_TOKEN or JIRA_EMAIL and JIRA_API_TOKEN"
+    'Jira auth not configured. Set JIRA_ACCESS_TOKEN or JIRA_EMAIL and JIRA_API_TOKEN',
   );
 }
 
@@ -42,10 +44,17 @@ function buildAuthHeaders(): Record<string, string> {
  */
 async function runAppleScript(script: string): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
-    execFile("osascript", ["-e", script], { encoding: "utf8" }, (err, stdout, stderr) => {
-      if (err) return reject(err);
-      resolve(String(stdout || "").trim());
-    });
+    execFile(
+      'osascript',
+      ['-e', script],
+      { encoding: 'utf8' },
+      (err, stdout, _stderr) => {
+        if (err) {
+          return reject(err);
+        }
+        resolve(String(stdout || '').trim());
+      },
+    );
   });
 }
 
@@ -56,7 +65,11 @@ async function runAppleScript(script: string): Promise<string> {
  * Note: `display dialog` uses a single-line text field; for multi-line content
  * we accept literal "\\n" sequences which will be expanded to real newlines.
  */
-async function macPromptText(message: string, defaultAnswer = "", title = "Jira Task"): Promise<string> {
+async function macPromptText(
+  message: string,
+  defaultAnswer = '',
+  title = 'Jira Task',
+): Promise<string> {
   const osa = `text returned of (display dialog ${JSON.stringify(message)} default answer ${JSON.stringify(defaultAnswer)} with title ${JSON.stringify(title)})`;
   const out = await runAppleScript(osa);
   return out;
@@ -67,12 +80,16 @@ async function macPromptText(message: string, defaultAnswer = "", title = "Jira 
  *
  * Why: Capture boolean choices (e.g. assign to yourself) via GUI.
  */
-async function macConfirm(message: string, defaultYes = true, title = "Jira Task"): Promise<boolean> {
-  const buttons = ["No", "Yes"];
-  const defaultButton = defaultYes ? "Yes" : "No";
-  const osa = `button returned of (display dialog ${JSON.stringify(message)} buttons {${buttons.map((b) => JSON.stringify(b)).join(",")}} default button ${JSON.stringify(defaultButton)} with title ${JSON.stringify(title)})`;
+async function macConfirm(
+  message: string,
+  defaultYes = true,
+  title = 'Jira Task',
+): Promise<boolean> {
+  const buttons = ['No', 'Yes'];
+  const defaultButton = defaultYes ? 'Yes' : 'No';
+  const osa = `button returned of (display dialog ${JSON.stringify(message)} buttons {${buttons.map((b) => JSON.stringify(b)).join(',')}} default button ${JSON.stringify(defaultButton)} with title ${JSON.stringify(title)})`;
   const out = await runAppleScript(osa);
-  return out === "Yes";
+  return out === 'Yes';
 }
 
 /**
@@ -80,9 +97,9 @@ async function macConfirm(message: string, defaultYes = true, title = "Jira Task
  */
 async function macCopyToClipboard(text: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const p = spawn("pbcopy", [], { stdio: ["pipe", "ignore", "ignore"] });
-    p.on("error", reject);
-    p.on("close", () => resolve());
+    const p = spawn('pbcopy', [], { stdio: ['pipe', 'ignore', 'ignore'] });
+    p.on('error', reject);
+    p.on('close', () => resolve());
     p.stdin.write(text);
     p.stdin.end();
   });
@@ -106,7 +123,10 @@ async function macNotify(title: string, message: string): Promise<void> {
  * Why: AppleScript's `display dialog` text field is single-line; TextEdit provides a familiar multi-line editor.
  * How: Creates a new document in TextEdit, shows an OK/Cancel dialog; on OK reads document text, closes without saving.
  */
-async function macPromptMultiline(title = "Jira Task", message = "Enter task content, then click OK."): Promise<string> {
+async function macPromptMultiline(
+  title = 'Jira Task',
+  message = 'Enter task content, then click OK.',
+): Promise<string> {
   const osa = `
 set docText to ""
 tell application "TextEdit"
@@ -129,15 +149,15 @@ return docText
  */
 function toAdfDescription(text: string): any {
   return {
-    type: "doc",
+    type: 'doc',
     version: 1,
     content: [
       {
-        type: "paragraph",
+        type: 'paragraph',
         content: text
           ? [
               {
-                type: "text",
+                type: 'text',
                 text,
               },
             ]
@@ -151,15 +171,23 @@ function toAdfDescription(text: string): any {
  * Deep-merge two plain objects. Arrays are replaced by the overlay value.
  */
 function deepMerge(base: any, overlay: any): any {
-  if (base == null || typeof base !== "object" || Array.isArray(base)) return overlay;
-  if (overlay == null || typeof overlay !== "object" || Array.isArray(overlay)) return overlay ?? base;
+  if (base == null || typeof base !== 'object' || Array.isArray(base)) {
+    return overlay;
+  }
+  if (
+    overlay == null ||
+    typeof overlay !== 'object' ||
+    Array.isArray(overlay)
+  ) {
+    return overlay ?? base;
+  }
   const out: any = { ...base };
   for (const key of Object.keys(overlay)) {
     const b = (base as any)[key];
     const o = (overlay as any)[key];
     if (Array.isArray(o)) {
       out[key] = o;
-    } else if (o && typeof o === "object") {
+    } else if (o && typeof o === 'object') {
       out[key] = deepMerge(b ?? {}, o);
     } else {
       out[key] = o;
@@ -171,16 +199,22 @@ function deepMerge(base: any, overlay: any): any {
 /**
  * Create an issue in Jira Cloud.
  */
-async function createJiraIssue(baseUrl: string, payload: any, headers: Record<string, string>): Promise<{ key: string; id: string }> {
-  const url = new URL("/rest/api/3/issue", baseUrl).toString();
+async function createJiraIssue(
+  baseUrl: string,
+  payload: any,
+  headers: Record<string, string>,
+): Promise<{ key: string; id: string }> {
+  const url = new URL('/rest/api/3/issue', baseUrl).toString();
   const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Jira create issue failed: ${res.status} ${res.statusText}\n${text}`);
+    throw new Error(
+      `Jira create issue failed: ${res.status} ${res.statusText}\n${text}`,
+    );
   }
   return res.json();
 }
@@ -188,12 +222,17 @@ async function createJiraIssue(baseUrl: string, payload: any, headers: Record<st
 /**
  * Retrieve current user's accountId (needed to assign issues to self).
  */
-async function getMyself(baseUrl: string, headers: Record<string, string>): Promise<{ accountId: string }> {
-  const url = new URL("/rest/api/3/myself", baseUrl).toString();
+async function getMyself(
+  baseUrl: string,
+  headers: Record<string, string>,
+): Promise<{ accountId: string }> {
+  const url = new URL('/rest/api/3/myself', baseUrl).toString();
   const res = await fetch(url, { headers });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Jira myself failed: ${res.status} ${res.statusText}\n${text}`);
+    throw new Error(
+      `Jira myself failed: ${res.status} ${res.statusText}\n${text}`,
+    );
   }
   return res.json();
 }
@@ -201,16 +240,26 @@ async function getMyself(baseUrl: string, headers: Record<string, string>): Prom
 /**
  * Assign an issue to an accountId.
  */
-async function assignIssue(baseUrl: string, issueKey: string, accountId: string, headers: Record<string, string>): Promise<void> {
-  const url = new URL(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/assignee`, baseUrl).toString();
+async function assignIssue(
+  baseUrl: string,
+  issueKey: string,
+  accountId: string,
+  headers: Record<string, string>,
+): Promise<void> {
+  const url = new URL(
+    `/rest/api/3/issue/${encodeURIComponent(issueKey)}/assignee`,
+    baseUrl,
+  ).toString();
   const res = await fetch(url, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...headers },
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ accountId }),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Jira assign failed: ${res.status} ${res.statusText}\n${text}`);
+    throw new Error(
+      `Jira assign failed: ${res.status} ${res.statusText}\n${text}`,
+    );
   }
 }
 
@@ -219,13 +268,17 @@ async function assignIssue(baseUrl: string, issueKey: string, accountId: string,
  */
 async function readMultiline(promptLabel: string): Promise<string> {
   process.stdout.write(promptLabel);
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  let buf = "";
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+  });
+  let buf = '';
   return await new Promise<string>((resolve) => {
-    rl.on("line", (line) => {
-      buf += (buf.length ? "\n" : "") + line;
+    rl.on('line', (line) => {
+      buf += (buf.length ? '\n' : '') + line;
     });
-    rl.on("close", () => resolve(buf));
+    rl.on('close', () => resolve(buf));
   });
 }
 
@@ -246,17 +299,21 @@ async function readMultiline(promptLabel: string): Promise<string> {
  *  - JIRA_LABELS (optional, comma-separated)
  *  - JIRA_COMPONENTS (optional, comma-separated component names)
  */
-export async function createTask(opts: Options): Promise<void> {
-  const baseUrl = process.env.JIRA_BASE_URL || "";
-  const projectKey = process.env.JIRA_PROJECT_KEY || "";
-  if (!baseUrl) throw new Error("JIRA_BASE_URL must be set in .env");
-  if (!projectKey) throw new Error("JIRA_PROJECT_KEY must be set in .env");
+export async function createTask(_opts: Options): Promise<void> {
+  const baseUrl = process.env.JIRA_BASE_URL || '';
+  const projectKey = process.env.JIRA_PROJECT_KEY || '';
+  if (!baseUrl) {
+    throw new Error('JIRA_BASE_URL must be set in .env');
+  }
+  if (!projectKey) {
+    throw new Error('JIRA_PROJECT_KEY must be set in .env');
+  }
 
-  const issueType = process.env.JIRA_ISSUE_TYPE || "Task";
+  const issueType = process.env.JIRA_ISSUE_TYPE || 'Task';
   const defaultAssign = true; // default Yes
 
   const guiEnabled = Boolean(process.env.JIRA_GUI);
-  const isMac = os.platform() === "darwin";
+  const isMac = os.platform() === 'darwin';
 
   /**
    * Gather task inputs either via GUI (macOS + JIRA_GUI) or terminal prompts.
@@ -266,34 +323,41 @@ export async function createTask(opts: Options): Promise<void> {
 
   if (guiEnabled && isMac) {
     // GUI mode: collect via macOS dialogs/TextEdit
-    const title = await macPromptText("Task title:");
-    const assignSelf = await macConfirm("Assign to yourself?", defaultAssign);
+    const title = await macPromptText('Task title:');
+    const assignSelf = await macConfirm('Assign to yourself?', defaultAssign);
     try {
       content = await macPromptMultiline();
     } catch {
       // Fallback: minimal single-line prompt with \n escape if TextEdit is unavailable
-      const raw = await macPromptText("Task content (use \\n for newlines):");
-      content = raw.replace(/\\n/g, "\n");
+      const raw = await macPromptText('Task content (use \\n for newlines):');
+      content = raw.replace(/\\n/g, '\n');
     }
     basicAnswers = { title, assignSelf };
   } else {
     // Terminal mode: enquirer + multiline read
-    basicAnswers = await prompt([
-      { name: "title", type: "input", message: "Task title:" },
-      { name: "assignSelf", type: "confirm", initial: defaultAssign, message: "Assign to yourself?" },
-    ]) as any;
+    basicAnswers = (await prompt([
+      { name: 'title', type: 'input', message: 'Task title:' },
+      {
+        name: 'assignSelf',
+        type: 'confirm',
+        initial: defaultAssign,
+        message: 'Assign to yourself?',
+      },
+    ])) as any;
     // Read content in true multiline mode: Enter inserts newlines, Ctrl+D submits
-    content = await readMultiline("Task content (Enter for newline, Ctrl+D to submit):\n");
+    content = await readMultiline(
+      'Task content (Enter for newline, Ctrl+D to submit):\n',
+    );
   }
 
   const headers = buildAuthHeaders();
 
-  const labels = (process.env.JIRA_LABELS || "")
-    .split(",")
+  const labels = (process.env.JIRA_LABELS || '')
+    .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const components = (process.env.JIRA_COMPONENTS || "")
-    .split(",")
+  const components = (process.env.JIRA_COMPONENTS || '')
+    .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
     .map((name) => ({ name }));
@@ -305,18 +369,29 @@ export async function createTask(opts: Options): Promise<void> {
   if (process.env.JIRA_DEFAULT_FIELDS) {
     try {
       const parsed = JSON.parse(process.env.JIRA_DEFAULT_FIELDS);
-      defaultFields = parsed?.fields && typeof parsed.fields === "object" ? parsed.fields : parsed;
+      defaultFields =
+        parsed?.fields && typeof parsed.fields === 'object'
+          ? parsed.fields
+          : parsed;
     } catch (e) {
-      console.warn("[task] Ignoring invalid JIRA_DEFAULT_FIELDS JSON:", e);
+      console.warn('[task] Ignoring invalid JIRA_DEFAULT_FIELDS JSON:', e);
     }
   }
 
   // Start with env-derived conveniences only when not explicitly provided in defaults
   let mergedFields: any = { ...defaultFields };
-  if (process.env.JIRA_PRIORITY && !mergedFields.priority) mergedFields.priority = { name: process.env.JIRA_PRIORITY };
-  if (labels.length && !mergedFields.labels) mergedFields.labels = labels;
-  if (components.length && !mergedFields.components) mergedFields.components = components;
-  if (!mergedFields.issuetype) mergedFields.issuetype = { name: issueType };
+  if (process.env.JIRA_PRIORITY && !mergedFields.priority) {
+    mergedFields.priority = { name: process.env.JIRA_PRIORITY };
+  }
+  if (labels.length && !mergedFields.labels) {
+    mergedFields.labels = labels;
+  }
+  if (components.length && !mergedFields.components) {
+    mergedFields.components = components;
+  }
+  if (!mergedFields.issuetype) {
+    mergedFields.issuetype = { name: issueType };
+  }
 
   // Overlay required fields and user-provided values last
   mergedFields = deepMerge(mergedFields, {
@@ -327,7 +402,7 @@ export async function createTask(opts: Options): Promise<void> {
 
   const payload: any = { fields: mergedFields };
 
-  const { key, id } = await createJiraIssue(baseUrl, payload, headers);
+  const { key } = await createJiraIssue(baseUrl, payload, headers);
   console.log(`[task] Created ${key}`);
 
   if (basicAnswers.assignSelf) {
@@ -336,7 +411,10 @@ export async function createTask(opts: Options): Promise<void> {
     console.log(`[task] Assigned ${key} to yourself`);
   }
 
-  const issueUrl = new URL(`/browse/${encodeURIComponent(key)}`, baseUrl).toString();
+  const issueUrl = new URL(
+    `/browse/${encodeURIComponent(key)}`,
+    baseUrl,
+  ).toString();
   console.log(`[task] ${issueUrl}`);
 
   // If GUI mode was used on macOS, copy link and show a notification
@@ -346,8 +424,9 @@ export async function createTask(opts: Options): Promise<void> {
     } catch {
       // Ignore clipboard errors; still try to notify
     }
-    await macNotify("Jira Task Created", `${key} created and link copied to clipboard`);
+    await macNotify(
+      'Jira Task Created',
+      `${key} created and link copied to clipboard`,
+    );
   }
 }
-
-

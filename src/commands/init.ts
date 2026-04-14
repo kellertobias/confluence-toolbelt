@@ -10,45 +10,47 @@
  * and commits the .gitignore to version control.
  */
 
-import fs from "fs";
-import path from "path";
-import { simpleGit } from "simple-git";
+import fs from 'node:fs';
+import path from 'node:path';
+import { simpleGit } from 'simple-git';
 
-interface Options { cwd: string }
+interface Options {
+  cwd: string;
+}
 
 /**
  * Render the suggested .env template with helpful comments.
  */
 function renderEnvTemplate(): string {
   const lines: string[] = [
-    "# Confluence API (required)",
-    "# Base URL example: https://your-domain.atlassian.net/wiki",
-    "CONFLUENCE_BASE_URL=",
-    "CONFLUENCE_EMAIL=",
-    "CONFLUENCE_API_TOKEN=",
-    "",
-    "# Jira API (optional, only needed for `task` command)",
-    "# Base URL example: https://your-domain.atlassian.net",
-    "JIRA_BASE_URL=",
-    "JIRA_PROJECT_KEY=",
-    "# Auth: either provide a personal access token OR basic auth (email+api token)",
-    "# JIRA_ACCESS_TOKEN=",
-    "# JIRA_EMAIL=",
-    "# JIRA_API_TOKEN=",
-    "",
-    "# Optional Jira defaults",
-    "# JIRA_ISSUE_TYPE=Task",
-    "# JIRA_PRIORITY=Medium",
-    "# Comma-separated labels", 
-    "# JIRA_LABELS=docs,automation",
-    "# Comma-separated component names",
-    "# JIRA_COMPONENTS=Documentation",
-    "",
-    "# Enable macOS GUI prompts for `task` (optional)",
-    "# JIRA_GUI=1",
-    "",
+    '# Confluence API (required)',
+    '# Base URL example: https://your-domain.atlassian.net/wiki',
+    'CONFLUENCE_BASE_URL=',
+    'CONFLUENCE_EMAIL=',
+    'CONFLUENCE_API_TOKEN=',
+    '',
+    '# Jira API (optional, only needed for `task` command)',
+    '# Base URL example: https://your-domain.atlassian.net',
+    'JIRA_BASE_URL=',
+    'JIRA_PROJECT_KEY=',
+    '# Auth: either provide a personal access token OR basic auth (email+api token)',
+    '# JIRA_ACCESS_TOKEN=',
+    '# JIRA_EMAIL=',
+    '# JIRA_API_TOKEN=',
+    '',
+    '# Optional Jira defaults',
+    '# JIRA_ISSUE_TYPE=Task',
+    '# JIRA_PRIORITY=Medium',
+    '# Comma-separated labels',
+    '# JIRA_LABELS=docs,automation',
+    '# Comma-separated component names',
+    '# JIRA_COMPONENTS=Documentation',
+    '',
+    '# Enable macOS GUI prompts for `task` (optional)',
+    '# JIRA_GUI=1',
+    '',
   ];
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 /**
@@ -57,8 +59,8 @@ function renderEnvTemplate(): string {
  * How: Check if .git exists; if not, run git init.
  */
 async function initGitRepo(opts: Options): Promise<void> {
-  const gitDir = path.resolve(opts.cwd, ".git");
-  
+  const gitDir = path.resolve(opts.cwd, '.git');
+
   if (fs.existsSync(gitDir)) {
     console.log(`[init] Git repository already initialized`);
     return;
@@ -76,48 +78,48 @@ async function initGitRepo(opts: Options): Promise<void> {
  * Returns true if .gitignore was created or modified, false otherwise.
  */
 function ensureGitignore(opts: Options): boolean {
-  const gitignorePath = path.resolve(opts.cwd, ".gitignore");
-  const entriesToAdd = [".env"];
-  
+  const gitignorePath = path.resolve(opts.cwd, '.gitignore');
+  const entriesToAdd = ['.env'];
+
   if (!fs.existsSync(gitignorePath)) {
     // Create new .gitignore with recommended entries
     const content = [
-      "# Environment variables (credentials)",
-      ".env",
-      "",
-      "# Node modules",
-      "node_modules/",
-      "",
-      "# Build output",
-      "dist/",
-      "",
-      "# OS files",
-      ".DS_Store",
-      "Thumbs.db",
-      "",
-    ].join("\n");
-    fs.writeFileSync(gitignorePath, content, "utf8");
+      '# Environment variables (credentials)',
+      '.env',
+      '',
+      '# Node modules',
+      'node_modules/',
+      '',
+      '# Build output',
+      'dist/',
+      '',
+      '# OS files',
+      '.DS_Store',
+      'Thumbs.db',
+      '',
+    ].join('\n');
+    fs.writeFileSync(gitignorePath, content, 'utf8');
     console.log(`[init] Created .gitignore`);
     return true;
   }
 
   // Check existing .gitignore and add missing entries
-  const existing = fs.readFileSync(gitignorePath, "utf8");
+  const existing = fs.readFileSync(gitignorePath, 'utf8');
   const lines = existing.split(/\r?\n/);
   const existingEntries = new Set(
-    lines
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith("#"))
+    lines.map((l) => l.trim()).filter((l) => l && !l.startsWith('#')),
   );
 
   const missing = entriesToAdd.filter((e) => !existingEntries.has(e));
-  
+
   if (missing.length > 0) {
-    const updated = existing.replace(/\s*$/, "\n") + 
-      "\n# Added by confluence-tools init\n" + 
-      missing.join("\n") + "\n";
-    fs.writeFileSync(gitignorePath, updated, "utf8");
-    console.log(`[init] Added ${missing.join(", ")} to .gitignore`);
+    const updated =
+      existing.replace(/\s*$/, '\n') +
+      '\n# Added by confluence-tools init\n' +
+      missing.join('\n') +
+      '\n';
+    fs.writeFileSync(gitignorePath, updated, 'utf8');
+    console.log(`[init] Added ${missing.join(', ')} to .gitignore`);
     return true;
   } else {
     console.log(`[init] .gitignore already contains .env`);
@@ -132,69 +134,71 @@ function ensureGitignore(opts: Options): boolean {
  *   user customizations.
  */
 function createOrUpdateEnv(opts: Options): void {
-  const envPath = path.resolve(opts.cwd, ".env");
+  const envPath = path.resolve(opts.cwd, '.env');
   const template = renderEnvTemplate();
 
   if (!fs.existsSync(envPath)) {
-    fs.writeFileSync(envPath, template, "utf8");
+    fs.writeFileSync(envPath, template, 'utf8');
     console.log(`[init] Wrote .env`);
     return;
   }
 
   // Append missing keys while preserving existing content
-  const existing = fs.readFileSync(envPath, "utf8");
+  const existing = fs.readFileSync(envPath, 'utf8');
   const have = new Set(
     existing
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => !l.startsWith("#") && /[A-Z0-9_]+=/.test(l))
-      .map((l) => l.split("=", 1)[0])
+      .filter((l) => !l.startsWith('#') && /[A-Z0-9_]+=/.test(l))
+      .map((l) => l.split('=', 1)[0]),
   );
 
-  const desiredKeys = [
-    "CONFLUENCE_BASE_URL",
-    "CONFLUENCE_EMAIL",
-    "CONFLUENCE_API_TOKEN",
-    "JIRA_BASE_URL",
-    "JIRA_PROJECT_KEY",
-    "JIRA_ACCESS_TOKEN",
-    "JIRA_EMAIL",
-    "JIRA_API_TOKEN",
-    "JIRA_ISSUE_TYPE",
-    "JIRA_PRIORITY",
-    "JIRA_LABELS",
-    "JIRA_COMPONENTS",
-    "JIRA_GUI",
+  const _desiredKeys = [
+    'CONFLUENCE_BASE_URL',
+    'CONFLUENCE_EMAIL',
+    'CONFLUENCE_API_TOKEN',
+    'JIRA_BASE_URL',
+    'JIRA_PROJECT_KEY',
+    'JIRA_ACCESS_TOKEN',
+    'JIRA_EMAIL',
+    'JIRA_API_TOKEN',
+    'JIRA_ISSUE_TYPE',
+    'JIRA_PRIORITY',
+    'JIRA_LABELS',
+    'JIRA_COMPONENTS',
+    'JIRA_GUI',
   ];
 
   // Build an appendix containing only missing keys with comments
   const appendixLines: string[] = [];
   function maybeAdd(key: string, comment?: string) {
     if (!have.has(key)) {
-      if (comment) appendixLines.push(comment);
+      if (comment) {
+        appendixLines.push(comment);
+      }
       appendixLines.push(`${key}=`);
     }
   }
 
   // Minimal grouping comments to keep the file readable after append
   const missingBefore = appendixLines.length;
-  maybeAdd("CONFLUENCE_BASE_URL", "\n# Added by init: Confluence base URL");
-  maybeAdd("CONFLUENCE_EMAIL");
-  maybeAdd("CONFLUENCE_API_TOKEN");
-  maybeAdd("JIRA_BASE_URL", "\n# Added by init: Jira settings (optional)");
-  maybeAdd("JIRA_PROJECT_KEY");
-  maybeAdd("JIRA_ACCESS_TOKEN");
-  maybeAdd("JIRA_EMAIL");
-  maybeAdd("JIRA_API_TOKEN");
-  maybeAdd("JIRA_ISSUE_TYPE");
-  maybeAdd("JIRA_PRIORITY");
-  maybeAdd("JIRA_LABELS");
-  maybeAdd("JIRA_COMPONENTS");
-  maybeAdd("JIRA_GUI");
+  maybeAdd('CONFLUENCE_BASE_URL', '\n# Added by init: Confluence base URL');
+  maybeAdd('CONFLUENCE_EMAIL');
+  maybeAdd('CONFLUENCE_API_TOKEN');
+  maybeAdd('JIRA_BASE_URL', '\n# Added by init: Jira settings (optional)');
+  maybeAdd('JIRA_PROJECT_KEY');
+  maybeAdd('JIRA_ACCESS_TOKEN');
+  maybeAdd('JIRA_EMAIL');
+  maybeAdd('JIRA_API_TOKEN');
+  maybeAdd('JIRA_ISSUE_TYPE');
+  maybeAdd('JIRA_PRIORITY');
+  maybeAdd('JIRA_LABELS');
+  maybeAdd('JIRA_COMPONENTS');
+  maybeAdd('JIRA_GUI');
 
   if (appendixLines.length > missingBefore) {
-    const next = existing.replace(/\s*$/, "\n") + appendixLines.join("\n") + "\n";
-    fs.writeFileSync(envPath, next, "utf8");
+    const next = `${existing.replace(/\s*$/, '\n') + appendixLines.join('\n')}\n`;
+    fs.writeFileSync(envPath, next, 'utf8');
     console.log(`[init] Updated .env with missing keys`);
   } else {
     console.log(`[init] .env already contains all known keys`);
@@ -208,27 +212,30 @@ function createOrUpdateEnv(opts: Options): void {
  */
 async function commitGitignore(opts: Options): Promise<void> {
   const git = simpleGit({ baseDir: opts.cwd });
-  const gitignorePath = ".gitignore";
-  
+  const gitignorePath = '.gitignore';
+
   try {
     // Stage the .gitignore file
     await git.add(gitignorePath);
-    
+
     // Check if there are changes to commit
     const status = await git.status();
     const hasChanges = status.staged.length > 0;
-    
+
     if (!hasChanges) {
       // No changes to commit
       return;
     }
-    
+
     // Commit with a descriptive message
-    await git.commit("chore: initialize .gitignore");
+    await git.commit('chore: initialize .gitignore');
     console.log(`[init] Committed .gitignore`);
   } catch (err) {
     // Log but don't throw - initialization succeeded, commit failure is non-critical
-    console.warn(`[init] Failed to commit .gitignore:`, err instanceof Error ? err.message : err);
+    console.warn(
+      `[init] Failed to commit .gitignore:`,
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
@@ -240,17 +247,15 @@ async function commitGitignore(opts: Options): Promise<void> {
 export async function initEnv(opts: Options): Promise<void> {
   // 1. Initialize git repository
   await initGitRepo(opts);
-  
+
   // 2. Ensure .gitignore exists and contains .env
   const gitignoreChanged = ensureGitignore(opts);
-  
+
   // 3. Commit .gitignore if it was created or modified
   if (gitignoreChanged) {
     await commitGitignore(opts);
   }
-  
+
   // 4. Create or update .env file
   createOrUpdateEnv(opts);
 }
-
-

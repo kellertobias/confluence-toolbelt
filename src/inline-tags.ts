@@ -11,7 +11,8 @@ export interface InlineTag {
   nodeId?: string;
 }
 
-const LEGACY_TAG_RE = /<!--\s*tag:(?<type>[\w-]+)?\s+(?:nodeId:(?<id>[\w-:]+))\s*-->/;
+const LEGACY_TAG_RE =
+  /<!--\s*tag:(?<type>[\w-]+)?\s+(?:nodeId:(?<id>[\w-:]+))\s*-->/;
 const NODE_TAG_RE = /<!--\s*node:(?<id>[\w-:]+)\s*-->/;
 
 export interface MarkdownBlock {
@@ -26,8 +27,10 @@ export function parseBlocks(markdownBody: string): MarkdownBlock[] {
   let current: string[] = [];
 
   function flush() {
-    if (current.length === 0) return;
-    blocks.push({ tag: pendingTag, text: current.join("\n").trimEnd() });
+    if (current.length === 0) {
+      return;
+    }
+    blocks.push({ tag: pendingTag, text: current.join('\n').trimEnd() });
     pendingTag = undefined;
     current = [];
   }
@@ -38,9 +41,12 @@ export function parseBlocks(markdownBody: string): MarkdownBlock[] {
     if (nodeMatch || legacyMatch) {
       flush();
       if (nodeMatch) {
-        pendingTag = { tagType: "content", nodeId: nodeMatch.groups?.id };
+        pendingTag = { tagType: 'content', nodeId: nodeMatch.groups?.id };
       } else if (legacyMatch) {
-        pendingTag = { tagType: legacyMatch.groups?.type, nodeId: legacyMatch.groups?.id };
+        pendingTag = {
+          tagType: legacyMatch.groups?.type,
+          nodeId: legacyMatch.groups?.id,
+        };
       }
       continue;
     }
@@ -51,7 +57,7 @@ export function parseBlocks(markdownBody: string): MarkdownBlock[] {
     }
   }
   flush();
-  return blocks.filter((b) => b.text.trim() !== "");
+  return blocks.filter((b) => b.text.trim() !== '');
 }
 
 export function emitTag(t: InlineTag): string {
@@ -59,8 +65,6 @@ export function emitTag(t: InlineTag): string {
   if (t.nodeId) {
     return `<!-- node:${t.nodeId} -->\n`;
   }
-  const parts = ["<!-- ", `tag:${t.tagType ?? "content"}`, " -->"];
-  return parts.join("") + "\n";
+  const parts = ['<!-- ', `tag:${t.tagType ?? 'content'}`, ' -->'];
+  return `${parts.join('')}\n`;
 }
-
-

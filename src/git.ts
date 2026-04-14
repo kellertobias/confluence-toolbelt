@@ -9,7 +9,7 @@
  * access to fields like `renamed` and avoid implicit any.
  */
 
-import { simpleGit, SimpleGit, StatusResult } from "simple-git";
+import { SimpleGit, StatusResult, simpleGit } from 'simple-git';
 
 /**
  * List Markdown files changed in the working tree.
@@ -28,7 +28,9 @@ export async function listChangedMarkdownFiles(cwd: string): Promise<string[]> {
     ...status.created,
     ...status.renamed.map((r) => r.to),
   ]) {
-    if (f && /\.mdx?$/.test(f)) candidates.add(f);
+    if (f && /\.mdx?$/.test(f)) {
+      candidates.add(f);
+    }
   }
   return Array.from(candidates);
 }
@@ -38,26 +40,29 @@ export async function listChangedMarkdownFiles(cwd: string): Promise<string[]> {
  * Returns an empty string when the file has no diff or when git throws
  * (e.g., the file is untracked or outside the repo).
  */
-export async function getDiffForFile(cwd: string, filePath: string): Promise<string> {
+export async function getDiffForFile(
+  cwd: string,
+  filePath: string,
+): Promise<string> {
   const git: SimpleGit = simpleGit({ baseDir: cwd });
   try {
-    return await git.diff(["--", filePath]);
+    return await git.diff(['--', filePath]);
   } catch {
-    return "";
+    return '';
   }
 }
 
 /**
  * Commit a single file to git with a simple update message.
- * 
+ *
  * Why: Automatically track Confluence uploads in version control to maintain
  * sync between local markdown and remote pages.
- * 
+ *
  * How: Stage the specific file and create a commit with format "update <filepath>".
  * The filepath in the message is relative to the repo root for clarity.
  * Skips files that are ignored by gitignore with a friendly notice.
  * Respects NO_AUTO_COMMIT environment variable to allow disabling auto-commits.
- * 
+ *
  * @param cwd - Repository root directory
  * @param filePath - Absolute path to the file to commit
  */
@@ -67,39 +72,42 @@ export async function commitFile(cwd: string, filePath: string): Promise<void> {
     console.log(`[git] Skipped commit (NO_AUTO_COMMIT is set): ${filePath}`);
     return;
   }
-  
+
   const git: SimpleGit = simpleGit({ baseDir: cwd });
-  const path = await import("path");
-  
+  const path = await import('node:path');
+
   // Get relative path from repo root for the commit message
   const relativePath = path.relative(cwd, filePath);
-  
+
   try {
     // Check if file is ignored by gitignore before attempting to commit
     const ignored = await git.checkIgnore(relativePath);
     if (ignored && ignored.length > 0) {
-      console.log(`[git] Skipped commit (file ignored by .gitignore): ${relativePath}`);
+      console.log(
+        `[git] Skipped commit (file ignored by .gitignore): ${relativePath}`,
+      );
       return;
     }
-    
+
     // Stage the specific file
     await git.add(relativePath);
-    
+
     // Check if there are actually changes to commit
     const status = await git.status();
     const hasChanges = status.staged.length > 0;
-    
+
     if (!hasChanges) {
       // File has no changes, no need to commit
       return;
     }
-    
+
     // Commit with the standardized message
     await git.commit(`update ${relativePath}`);
   } catch (err) {
     // Log but don't throw - upload succeeded, commit failure is non-critical
-    console.warn(`[git] Failed to commit ${relativePath}:`, err instanceof Error ? err.message : err);
+    console.warn(
+      `[git] Failed to commit ${relativePath}:`,
+      err instanceof Error ? err.message : err,
+    );
   }
 }
-
-
