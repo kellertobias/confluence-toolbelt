@@ -486,6 +486,46 @@ describe('storageToMarkdownBlocks', () => {
       '<ac:plain-text-link-body><![CDATA[API docs]]></ac:plain-text-link-body>',
     );
   });
+
+  it('converts pageid: links to ri:content-entity on upload', () => {
+    const md = 'See [the TDD](pageid:12345) for details.';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:link>');
+    expect(html).toContain(
+      '<ri:content-entity ri:content-id="12345"/>',
+    );
+    expect(html).toContain(
+      '<ac:plain-text-link-body><![CDATA[the TDD]]></ac:plain-text-link-body>',
+    );
+  });
+
+  it('converts ri:content-entity links to pageid: on download', () => {
+    const storageHtml = `
+      <p>
+        See <ac:link>
+          <ri:content-entity ri:content-id="67890" />
+          <ac:plain-text-link-body><![CDATA[Design Doc]]></ac:plain-text-link-body>
+        </ac:link> for info.
+      </p>
+    `;
+    const md = storageToMarkdownBlocks(storageHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('[Design Doc](pageid:67890)');
+  });
+
+  it('round-trips pageid: links through storage HTML', () => {
+    const md = '[Care Import TDD](pageid:42)';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain(
+      '<ri:content-entity ri:content-id="42"/>',
+    );
+
+    const roundTripped = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(roundTripped).toContain('[Care Import TDD](pageid:42)');
+  });
 });
 
 describe('inline comment wrapper round-trip', () => {

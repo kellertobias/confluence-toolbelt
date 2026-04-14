@@ -864,17 +864,21 @@ function inlineHtml(s: string): string {
   out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
     const hrefStr = String(href || '');
 
-    // Page links: [text](page:PageTitle) or [text](page:SPACE:PageTitle)
+    // Page links by ID: [text](pageid:12345) — cross-space, rename-proof
+    if (hrefStr.startsWith('pageid:')) {
+      const contentId = hrefStr.slice(7);
+      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+    }
+
+    // Page links by title: [text](page:PageTitle) or [text](page:SPACE:PageTitle)
     if (hrefStr.startsWith('page:')) {
-      const pageRef = hrefStr.slice(5); // Remove "page:" prefix
+      const pageRef = hrefStr.slice(5);
       const parts = pageRef.split(':');
       if (parts.length >= 2 && parts[0]) {
-        // Format: page:SPACE:Title
         const spaceKey = parts[0];
         const contentTitle = parts.slice(1).join(':');
         return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(contentTitle)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
       } else {
-        // Format: page:Title (no space key)
         return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
       }
     }
@@ -1060,28 +1064,42 @@ function normalizeMacros(html: string): string {
       return `MD_MENTION(${encId})[${encVis}]`;
     }
 
-    // Page links → token (decoded to markdown after turndown)
+    // Content entity links (by page ID) → token
+    const contentEntityMatch = innerStr.match(/<ri:content-entity[^>]*>/i);
+    if (contentEntityMatch) {
+      const contentId =
+        innerStr.match(/ri:content-id=["']([^"']+)["']/i)?.[1] || '';
+      const linkBodyMatch =
+        innerStr.match(
+          /<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i,
+        ) || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+      const linkBody = linkBodyMatch?.[1] || '';
+      const linkText = linkBody.replace(/<[^>]+>/g, '').trim() || contentId;
+      const pageRef = `pageid:${contentId}`;
+      const encRef = encodeURIComponent(pageRef);
+      const encText = encodeURIComponent(linkText);
+      return `MD_PAGE_LINK~~${encRef}~~${encText}~~END`;
+    }
+
+    // Page links by title → token (decoded to markdown after turndown)
     const pageMatch = innerStr.match(/<ri:page[^>]*>/i);
     if (pageMatch) {
       const contentTitle =
         innerStr.match(/ri:content-title=["']([^"']+)["']/i)?.[1] || '';
       const spaceKey =
         innerStr.match(/ri:space-key=["']([^"']+)["']/i)?.[1] || '';
-      // Extract link body separately (not tied to ri:page position)
       const linkBodyMatch =
         innerStr.match(
           /<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i,
         ) || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
       const linkBody = linkBodyMatch?.[1] || '';
-      // Extract visible text (strip tags and decode CDATA)
-      const linkText = linkBody.replace(/<[^>]+>/g, '').trim() || contentTitle;
-      // Build page reference
+      const linkText =
+        linkBody.replace(/<[^>]+>/g, '').trim() || contentTitle;
       const pageRef = spaceKey
         ? `page:${spaceKey}:${contentTitle}`
         : `page:${contentTitle}`;
       const encRef = encodeURIComponent(pageRef);
       const encText = encodeURIComponent(linkText);
-      // Use token format to avoid turndown escaping
       return `MD_PAGE_LINK~~${encRef}~~${encText}~~END`;
     }
 

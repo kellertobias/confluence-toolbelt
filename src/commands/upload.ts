@@ -8,6 +8,7 @@ import enquirer from 'enquirer';
 import { fromEnv } from '../api.js';
 import { commitFile, listChangedMarkdownFiles } from '../git.js';
 import { parseBlocks } from '../inline-tags.js';
+import { resolveLocalPageLinks } from '../local-links.js';
 import { parseHeader } from '../md-header.js';
 import { markdownToStorageHtml, replaceNodesById } from '../storage-dom.js';
 
@@ -148,7 +149,8 @@ export async function uploadAll(opts: Options): Promise<void> {
       undefined,
       meta.status,
     );
-    const blocks = parseBlocks(body);
+    const resolvedBody = resolveLocalPageLinks(body, file, opts.cwd);
+    const blocks = parseBlocks(resolvedBody);
 
     if (verbose) {
       /**
@@ -192,7 +194,7 @@ export async function uploadAll(opts: Options): Promise<void> {
         console.warn(
           `[upload] Missing nodeIds on page ${meta.pageId}: ${missing.join(', ')}. Falling back to full update.`,
         );
-        const fullHtml = markdownToStorageHtml(body);
+        const fullHtml = markdownToStorageHtml(resolvedBody);
         if (verbose) {
           const verbosePath = path.join(
             path.dirname(file),
@@ -247,7 +249,7 @@ export async function uploadAll(opts: Options): Promise<void> {
       }
     } else {
       // No tags -> full page replacement
-      const fullHtml = markdownToStorageHtml(body);
+      const fullHtml = markdownToStorageHtml(resolvedBody);
       if (verbose) {
         console.log('[upload]   no tags detected -> full page update');
         const verbosePath = path.join(
