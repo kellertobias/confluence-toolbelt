@@ -21,16 +21,16 @@
       }
     ],
     [
-      "@semantic-release/exec",
+      "@semantic-release/npm",
       {
-        "prepareCmd": "npm run build"
+        "npmPublish": false
       }
     ],
     [
-      "@semantic-release/npm",
+      "@semantic-release/exec",
       {
-        "npmPublish": true,
-        "provenance": true
+        "prepareCmd": "npm run build",
+        "publishCmd": "npm publish --provenance --access public"
       }
     ],
     [
