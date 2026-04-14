@@ -1,3 +1,12 @@
+## <small>1.2.4 (2026-04-14)</small>
+
+* chore: enhance semantic-release configuration ([6196134](https://github.com/kellertobias/confluence-toolbelt/commit/6196134))
+* chore: update semantic-release configuration and GitHub Actions ([c9830ef](https://github.com/kellertobias/confluence-toolbelt/commit/c9830ef))
+* fix: lint ([77ad07f](https://github.com/kellertobias/confluence-toolbelt/commit/77ad07f))
+* fix: numbered lists ([e2cd2f3](https://github.com/kellertobias/confluence-toolbelt/commit/e2cd2f3))
+* fix: semantic release direct npm push ([359824e](https://github.com/kellertobias/confluence-toolbelt/commit/359824e))
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([738ec12](https://github.com/kellertobias/confluence-toolbelt/commit/738ec12))
+
 ## <small>1.2.3 (2025-10-29)</small>
 
 * fix: update readme for final release version ([4b18929](https://github.com/kellertobias/confluence-toolbelt/commit/4b18929))
