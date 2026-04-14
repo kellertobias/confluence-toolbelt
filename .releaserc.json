@@ -29,8 +29,14 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "npm run build",
-        "publishCmd": "npm publish --provenance --access public"
+        "prepareCmd": "npm run build"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false
       }
     ],
     [
@@ -38,12 +44,6 @@
       {
         "assets": ["CHANGELOG.md", "package.json", "package-lock.json"],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
-      }
-    ],
-    [
-      "@semantic-release/github",
-      {
-        "assets": []
       }
     ]
   ]
