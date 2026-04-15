@@ -746,17 +746,14 @@ function consumeTable(
   const header = normalize(headerCells);
   const bodyRows = rows.map((r) => normalize(r));
 
-  const layoutValueMap: Record<string, string> = {
-    full: 'full-width',
-    wider: 'wide',
-  };
-  const layoutValue = config?.layout
-    ? layoutValueMap[config.layout] || ''
-    : '';
-  const layoutAttr = layoutValue ? ` data-layout="${layoutValue}"` : '';
+  const widthPx =
+    config?.layout && config.layout !== 'content'
+      ? TABLE_WIDTH_PX[config.layout] || 0
+      : 0;
+  const widthAttr = widthPx ? ` data-table-width="${widthPx}"` : '';
 
   const parts: string[] = [];
-  parts.push(`<table${layoutAttr}>`);
+  parts.push(`<table${widthAttr}>`);
 
   if (config?.colWidths && config.colWidths.length > 0) {
     let shares = config.colWidths;
@@ -1396,11 +1393,45 @@ function normalizeMacros(html: string): string {
   return out;
 }
 
+function tableWidthToLayoutName(px: number): string {
+  if (px > 1100) {
+    return 'full';
+  }
+  if (px > 800) {
+    return 'wider';
+  }
+  return 'content';
+}
+
+const TABLE_WIDTH_PX: Record<string, number> = {
+  content: 760,
+  wider: 960,
+  full: 1800,
+};
+
 function renderTableMarkdown(tableEl: Element): string {
-  // Extract table layout and column width config for round-trip
-  const layoutRaw = (
+  // Extract table width: prefer data-table-width (pixel), fall back to legacy data-layout
+  const tableWidthAttr = (tableEl as any).getAttribute?.('data-table-width') || '';
+  const tableWidthPx = tableWidthAttr ? parseInt(tableWidthAttr, 10) : 0;
+
+  const legacyLayout = (
     (tableEl as any).getAttribute?.('data-layout') || ''
   ).toLowerCase();
+  const legacyLayoutMap: Record<string, string> = {
+    'full-width': 'full',
+    wide: 'wider',
+  };
+
+  let mappedLayout = '';
+  if (tableWidthPx > 0) {
+    mappedLayout = tableWidthToLayoutName(tableWidthPx);
+    if (mappedLayout === 'content') {
+      mappedLayout = '';
+    }
+  } else if (legacyLayoutMap[legacyLayout]) {
+    mappedLayout = legacyLayoutMap[legacyLayout] || '';
+  }
+
   const colEls = Array.from(tableEl.querySelectorAll('col')) as Element[];
   const colPixelWidths = colEls
     .map((col) => {
@@ -1409,12 +1440,6 @@ function renderTableMarkdown(tableEl: Element): string {
       return m ? parseFloat(m[1]) : 0;
     })
     .filter((w) => w > 0);
-
-  const layoutNameMap: Record<string, string> = {
-    'full-width': 'full',
-    wide: 'wider',
-  };
-  const mappedLayout = layoutNameMap[layoutRaw] || '';
 
   let shares: number[] = [];
   if (colPixelWidths.length > 0) {

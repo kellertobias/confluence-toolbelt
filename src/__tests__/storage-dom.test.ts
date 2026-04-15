@@ -529,9 +529,9 @@ describe('storageToMarkdownBlocks', () => {
 });
 
 describe('table config (layout and column widths)', () => {
-  it('emits <!-- table:wider --> when table has data-layout="wide"', () => {
+  it('emits <!-- table:wider --> when table has data-table-width="960"', () => {
     const html = `
-      <table data-layout="wide">
+      <table data-table-width="960">
         <thead><tr><th>A</th><th>B</th></tr></thead>
         <tbody><tr><td>1</td><td>2</td></tr></tbody>
       </table>
@@ -543,9 +543,9 @@ describe('table config (layout and column widths)', () => {
     expect(md).toContain('| A | B |');
   });
 
-  it('emits <!-- table:full --> when table has data-layout="full-width"', () => {
+  it('emits <!-- table:full --> when table has data-table-width="1800"', () => {
     const html = `
-      <table data-layout="full-width">
+      <table data-table-width="1800">
         <thead><tr><th>X</th><th>Y</th></tr></thead>
         <tbody><tr><td>a</td><td>b</td></tr></tbody>
       </table>
@@ -558,7 +558,7 @@ describe('table config (layout and column widths)', () => {
 
   it('emits column width shares from colgroup on download', () => {
     const html = `
-      <table data-layout="full-width">
+      <table data-table-width="1800">
         <colgroup>
           <col style="width: 100px;" />
           <col style="width: 200px;" />
@@ -591,7 +591,7 @@ describe('table config (layout and column widths)', () => {
     expect(md).toContain('<!-- table:content 2,3 -->');
   });
 
-  it('does not emit config for plain table with no layout or colgroup', () => {
+  it('does not emit config for plain table with no width or colgroup', () => {
     const html = `
       <table>
         <thead><tr><th>A</th><th>B</th></tr></thead>
@@ -606,7 +606,7 @@ describe('table config (layout and column widths)', () => {
 
   it('does not emit shares when all columns are equal width', () => {
     const html = `
-      <table data-layout="wide">
+      <table data-table-width="960">
         <colgroup>
           <col style="width: 150px;" />
           <col style="width: 150px;" />
@@ -622,6 +622,32 @@ describe('table config (layout and column widths)', () => {
     expect(md).not.toMatch(/<!-- table:wider \d/);
   });
 
+  it('falls back to legacy data-layout for older Confluence content', () => {
+    const html = `
+      <table data-layout="wide">
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:wider -->');
+  });
+
+  it('treats content-width data-table-width as no layout', () => {
+    const html = `
+      <table data-table-width="760">
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).not.toContain('<!-- table:');
+  });
+
   it('uploads table with <!-- table:full 1,2,1 --> config', () => {
     const md = [
       '<!-- table:full 1,2,1 -->',
@@ -630,7 +656,7 @@ describe('table config (layout and column widths)', () => {
       '| 1 | 2 | 3 |',
     ].join('\n');
     const html = markdownToStorageHtml(md);
-    expect(html).toContain('data-layout="full-width"');
+    expect(html).toContain('data-table-width="1800"');
     expect(html).toContain('<colgroup>');
     expect(html).toContain('<col style="width: 100px;"');
     expect(html).toContain('<col style="width: 200px;"');
@@ -644,7 +670,7 @@ describe('table config (layout and column widths)', () => {
       '| 1 | 2 |',
     ].join('\n');
     const html = markdownToStorageHtml(md);
-    expect(html).toContain('data-layout="wide"');
+    expect(html).toContain('data-table-width="960"');
     expect(html).not.toContain('<colgroup>');
   });
 
@@ -652,13 +678,13 @@ describe('table config (layout and column widths)', () => {
     const md = ['| A | B |', '| --- | --- |', '| 1 | 2 |'].join('\n');
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<table>');
-    expect(html).not.toContain('data-layout');
+    expect(html).not.toContain('data-table-width');
     expect(html).not.toContain('<colgroup>');
   });
 
   it('round-trips table config through download and upload', () => {
     const storageHtml = `
-      <table data-layout="full-width">
+      <table data-table-width="1800">
         <colgroup>
           <col style="width: 100px;" />
           <col style="width: 200px;" />
@@ -674,7 +700,7 @@ describe('table config (layout and column widths)', () => {
     expect(md).toContain('<!-- table:full 1,2,1 -->');
 
     const backHtml = markdownToStorageHtml(md);
-    expect(backHtml).toContain('data-layout="full-width"');
+    expect(backHtml).toContain('data-table-width="1800"');
     expect(backHtml).toContain('<colgroup>');
     expect(backHtml).toContain('<col style="width: 100px;"');
     expect(backHtml).toContain('<col style="width: 200px;"');

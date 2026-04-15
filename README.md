@@ -215,6 +215,49 @@ Cell background colors can be preserved with inline comments:
 | Needs Work | See below <!-- cell:bg:red -->  |
 ```
 
+### Table Width and Column Configuration
+
+You can control the overall table width and individual column proportions by placing a `<!-- table:LAYOUT [SHARES] -->` comment directly before the table:
+
+```markdown
+<!-- table:full 1,2,1 -->
+| Name   | Description              | Status |
+| ------ | ------------------------ | ------ |
+| Item A | A longer description     | Done   |
+| Item B | Short                    | WIP    |
+```
+
+**Layout** controls the total table width on the Confluence page:
+
+| Layout    | Width  | Description                   |
+|-----------|--------|-------------------------------|
+| `content` | 760px  | Default content-area width    |
+| `wider`   | 960px  | Wider than content area       |
+| `full`    | 1800px | Full page width               |
+
+**Column shares** (optional) are comma-separated integers that set proportional column widths. In the example above, `1,2,1` means the middle column is twice as wide as the outer columns.
+
+You can use layout alone, shares alone, or both:
+
+```markdown
+<!-- table:wider -->
+| A | B |
+| --- | --- |
+| 1 | 2 |
+
+<!-- table:content 2,3 -->
+| Narrow | Wide |
+| --- | --- |
+| x | y |
+
+<!-- table:full 1,1,3,1 -->
+| ID | Type | Details | Status |
+| --- | --- | --- | --- |
+| 1 | Bug | Long description here | Open |
+```
+
+When downloading a page from Confluence, table width and column configuration is automatically extracted and emitted as the config comment. Tables with default content width and equal columns produce no comment.
+
 ### Lists
 
 ```markdown
