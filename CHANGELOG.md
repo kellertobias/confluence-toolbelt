@@ -1,3 +1,8 @@
+## 1.4.0 (2026-04-15)
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([a231e97](https://github.com/kellertobias/confluence-toolbelt/commit/a231e97))
+* feat: add support for Mermaid diagrams in markdown ([4af6e18](https://github.com/kellertobias/confluence-toolbelt/commit/4af6e18))
+
 ## 1.3.0 (2026-04-14)
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([f10b15d](https://github.com/kellertobias/confluence-toolbelt/commit/f10b15d))
