@@ -528,6 +528,173 @@ describe('storageToMarkdownBlocks', () => {
   });
 });
 
+describe('table config (layout and column widths)', () => {
+  it('emits <!-- table:wider --> when table has data-layout="wide"', () => {
+    const html = `
+      <table data-layout="wide">
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:wider -->');
+    expect(md).toContain('| A | B |');
+  });
+
+  it('emits <!-- table:full --> when table has data-layout="full-width"', () => {
+    const html = `
+      <table data-layout="full-width">
+        <thead><tr><th>X</th><th>Y</th></tr></thead>
+        <tbody><tr><td>a</td><td>b</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:full -->');
+  });
+
+  it('emits column width shares from colgroup on download', () => {
+    const html = `
+      <table data-layout="full-width">
+        <colgroup>
+          <col style="width: 100px;" />
+          <col style="width: 200px;" />
+          <col style="width: 100px;" />
+        </colgroup>
+        <thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:full 1,2,1 -->');
+  });
+
+  it('emits content layout with shares when only colgroup differs', () => {
+    const html = `
+      <table>
+        <colgroup>
+          <col style="width: 200px;" />
+          <col style="width: 300px;" />
+        </colgroup>
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:content 2,3 -->');
+  });
+
+  it('does not emit config for plain table with no layout or colgroup', () => {
+    const html = `
+      <table>
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).not.toContain('<!-- table:');
+  });
+
+  it('does not emit shares when all columns are equal width', () => {
+    const html = `
+      <table data-layout="wide">
+        <colgroup>
+          <col style="width: 150px;" />
+          <col style="width: 150px;" />
+        </colgroup>
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:wider -->');
+    expect(md).not.toMatch(/<!-- table:wider \d/);
+  });
+
+  it('uploads table with <!-- table:full 1,2,1 --> config', () => {
+    const md = [
+      '<!-- table:full 1,2,1 -->',
+      '| A | B | C |',
+      '| --- | --- | --- |',
+      '| 1 | 2 | 3 |',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-layout="full-width"');
+    expect(html).toContain('<colgroup>');
+    expect(html).toContain('<col style="width: 100px;"');
+    expect(html).toContain('<col style="width: 200px;"');
+  });
+
+  it('uploads table with <!-- table:wider --> layout only', () => {
+    const md = [
+      '<!-- table:wider -->',
+      '| A | B |',
+      '| --- | --- |',
+      '| 1 | 2 |',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-layout="wide"');
+    expect(html).not.toContain('<colgroup>');
+  });
+
+  it('uploads plain table without config comment as before', () => {
+    const md = ['| A | B |', '| --- | --- |', '| 1 | 2 |'].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<table>');
+    expect(html).not.toContain('data-layout');
+    expect(html).not.toContain('<colgroup>');
+  });
+
+  it('round-trips table config through download and upload', () => {
+    const storageHtml = `
+      <table data-layout="full-width">
+        <colgroup>
+          <col style="width: 100px;" />
+          <col style="width: 200px;" />
+          <col style="width: 100px;" />
+        </colgroup>
+        <thead><tr><th>Name</th><th>Description</th><th>Status</th></tr></thead>
+        <tbody><tr><td>Item</td><td>Details here</td><td>Done</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(storageHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- table:full 1,2,1 -->');
+
+    const backHtml = markdownToStorageHtml(md);
+    expect(backHtml).toContain('data-layout="full-width"');
+    expect(backHtml).toContain('<colgroup>');
+    expect(backHtml).toContain('<col style="width: 100px;"');
+    expect(backHtml).toContain('<col style="width: 200px;"');
+  });
+
+  it('pads missing column shares with 1 when fewer shares than columns', () => {
+    const md = [
+      '<!-- table:content 2,3 -->',
+      '| A | B | C |',
+      '| --- | --- | --- |',
+      '| 1 | 2 | 3 |',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<colgroup>');
+    expect(html).toContain('<col style="width: 200px;"');
+    expect(html).toContain('<col style="width: 300px;"');
+    expect(html).toContain('<col style="width: 100px;"');
+  });
+});
+
 describe('mermaid diagrams', () => {
   it('converts mermaid code block to comment + mermaid.ink image on upload', () => {
     const md = '```mermaid\ngraph TD\n    A --> B\n```';

@@ -523,6 +523,29 @@ export function markdownToStorageHtml(md: string): string {
       continue;
     }
 
+    // Table with config comment: <!-- table:LAYOUT [COL_SHARES] -->
+    const tableConfigMatch = line?.match(
+      /^\s*<!--\s*table:(\S+)(?:\s+([\d,]+))?\s*-->\s*$/i,
+    );
+    if (tableConfigMatch && looksLikeTableHeader(lines, i + 1)) {
+      const layoutName = (tableConfigMatch[1] || '').toLowerCase();
+      const sharesStr = tableConfigMatch[2] || '';
+      const colWidths = sharesStr
+        ? sharesStr
+            .split(',')
+            .map(Number)
+            .filter((n) => !Number.isNaN(n) && n > 0)
+        : undefined;
+      i++;
+      const { html, nextIndex } = consumeTable(lines, i, {
+        layout: layoutName,
+        colWidths,
+      });
+      out.push(html);
+      i = nextIndex;
+      continue;
+    }
+
     // Tables
     if (looksLikeTableHeader(lines, i)) {
       const { html, nextIndex } = consumeTable(lines, i);
@@ -701,6 +724,7 @@ function looksLikeTableHeader(lines: string[], index: number): boolean {
 function consumeTable(
   lines: string[],
   start: number,
+  config?: { layout?: string; colWidths?: number[] },
 ): { html: string; nextIndex: number } {
   const rows: string[][] = [];
   let i = start;
@@ -721,8 +745,34 @@ function consumeTable(
     cells.concat(Array(Math.max(0, colCount - cells.length)).fill(''));
   const header = normalize(headerCells);
   const bodyRows = rows.map((r) => normalize(r));
+
+  const layoutValueMap: Record<string, string> = {
+    full: 'full-width',
+    wider: 'wide',
+  };
+  const layoutValue = config?.layout
+    ? layoutValueMap[config.layout] || ''
+    : '';
+  const layoutAttr = layoutValue ? ` data-layout="${layoutValue}"` : '';
+
   const parts: string[] = [];
-  parts.push('<table>');
+  parts.push(`<table${layoutAttr}>`);
+
+  if (config?.colWidths && config.colWidths.length > 0) {
+    let shares = config.colWidths;
+    if (shares.length < colCount) {
+      shares = [...shares, ...Array(colCount - shares.length).fill(1)];
+    } else if (shares.length > colCount) {
+      shares = shares.slice(0, colCount);
+    }
+    parts.push('<colgroup>');
+    for (const share of shares) {
+      const px = share * 100;
+      parts.push(`<col style="width: ${px}px;" />`);
+    }
+    parts.push('</colgroup>');
+  }
+
   // Optional thead
   parts.push('<thead><tr>');
   for (const c of header) {
@@ -1027,6 +1077,15 @@ function selectAccountId(id: string, label: string): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function gcdNum(a: number, b: number): number {
+  let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+  while (y) {
+    [x, y] = [y, x % y];
+  }
+  return x || 1;
 }
 
 function normalizeMacros(html: string): string {
@@ -1338,6 +1397,46 @@ function normalizeMacros(html: string): string {
 }
 
 function renderTableMarkdown(tableEl: Element): string {
+  // Extract table layout and column width config for round-trip
+  const layoutRaw = (
+    (tableEl as any).getAttribute?.('data-layout') || ''
+  ).toLowerCase();
+  const colEls = Array.from(tableEl.querySelectorAll('col')) as Element[];
+  const colPixelWidths = colEls
+    .map((col) => {
+      const style = (col as any).getAttribute?.('style') || '';
+      const m = style.match(/width:\s*([\d.]+)/);
+      return m ? parseFloat(m[1]) : 0;
+    })
+    .filter((w) => w > 0);
+
+  const layoutNameMap: Record<string, string> = {
+    'full-width': 'full',
+    wide: 'wider',
+  };
+  const mappedLayout = layoutNameMap[layoutRaw] || '';
+
+  let shares: number[] = [];
+  if (colPixelWidths.length > 0) {
+    const rounded = colPixelWidths.map((w) => Math.round(w));
+    const g = rounded.reduce((a, b) => gcdNum(a, b));
+    shares = rounded.map((w) => w / g);
+    if (shares.every((s) => s === shares[0])) {
+      shares = [];
+    }
+  }
+
+  let configComment = '';
+  if (mappedLayout) {
+    configComment = `<!-- table:${mappedLayout}`;
+    if (shares.length > 0) {
+      configComment += ` ${shares.join(',')}`;
+    }
+    configComment += ' -->';
+  } else if (shares.length > 0) {
+    configComment = `<!-- table:content ${shares.join(',')} -->`;
+  }
+
   // Build GFM table; preserve inline HTML comments inside cells
   const rows = Array.from(tableEl.querySelectorAll('tr')) as Element[];
   if (rows.length === 0) {
@@ -1351,7 +1450,6 @@ function renderTableMarkdown(tableEl: Element): string {
   });
   const colCount = Math.max(0, ...matrix.map((r) => r.length));
   const lines: string[] = [];
-  // Header row is first row
   const first = matrix[0] || [];
   const header = first.concat(
     Array(Math.max(0, colCount - first.length)).fill(''),
@@ -1365,8 +1463,12 @@ function renderTableMarkdown(tableEl: Element): string {
     );
     lines.push(`| ${row.join(' | ')} |`);
   }
-  const out = lines.join('\n');
-  return decodeMdCommentTokens(out);
+  const tableOut = lines.join('\n');
+  const decoded = decodeMdCommentTokens(tableOut);
+  if (configComment) {
+    return `${configComment}\n${decoded}`;
+  }
+  return decoded;
 }
 
 function getCellTextWithComments(cell: Element): string {
