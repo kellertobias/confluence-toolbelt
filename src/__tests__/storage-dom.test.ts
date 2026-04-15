@@ -722,15 +722,17 @@ describe('table config (layout and column widths)', () => {
 });
 
 describe('mermaid diagrams', () => {
-  it('converts mermaid code block to comment + mermaid.ink image on upload', () => {
+  it('converts mermaid code block to pako URL image + expand macro on upload', () => {
     const md = '```mermaid\ngraph TD\n    A --> B\n```';
     const html = markdownToStorageHtml(md);
-    const encoded = Buffer.from('graph TD\n    A --> B').toString('base64');
-    expect(html).toContain(`<!-- mermaid:${encoded} -->`);
     expect(html).toContain('<ac:image');
-    expect(html).toContain(
-      `ri:value="https://mermaid.ink/img/base64:${encoded}"`,
-    );
+    expect(html).toContain('mermaid.ink/img/pako:');
+    expect(html).toContain('?type=png');
+    expect(html).toContain('ac:name="expand"');
+    expect(html).toContain('Mermaid Diagram Source');
+    expect(html).toContain('graph TD');
+    expect(html).toContain('A --> B');
+    expect(html).not.toContain('<!-- mermaid:');
   });
 
   it('does not affect non-mermaid code blocks', () => {
@@ -741,7 +743,35 @@ describe('mermaid diagrams', () => {
     expect(html).toContain('ac:name="language">typescript');
   });
 
-  it('reconstructs mermaid code block on download', () => {
+  it('reconstructs mermaid code block from expand macro on download', () => {
+    const source = 'graph LR\n    X --> Y';
+    const storageHtml = `
+      <p>Intro</p>
+      <ac:image ac:align="center" ac:width="800">
+        <ac:parameter ac:name="width">800</ac:parameter>
+        <ri:url ri:value="https://mermaid.ink/img/pako:abc123"/>
+      </ac:image>
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Mermaid Diagram Source</ac:parameter>
+        <ac:rich-text-body>
+          <ac:structured-macro ac:name="code">
+            <ac:plain-text-body><![CDATA[${source}]]></ac:plain-text-body>
+          </ac:structured-macro>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+      <p>After</p>
+    `;
+    const md = storageToMarkdownBlocks(storageHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('```mermaid');
+    expect(md).toContain('graph LR');
+    expect(md).toContain('X --> Y');
+    expect(md).toContain('```');
+    expect(md).not.toContain('mermaid.ink');
+  });
+
+  it('reconstructs mermaid from legacy comment + image format', () => {
     const source = 'graph LR\n    X --> Y';
     const encoded = Buffer.from(source).toString('base64');
     const storageHtml = `
@@ -759,8 +789,6 @@ describe('mermaid diagrams', () => {
     expect(md).toContain('```mermaid');
     expect(md).toContain('graph LR');
     expect(md).toContain('X --> Y');
-    expect(md).toContain('```');
-    expect(md).not.toContain('mermaid.ink');
   });
 
   it('round-trips mermaid diagrams without data loss', () => {
@@ -768,15 +796,10 @@ describe('mermaid diagrams', () => {
       '```mermaid\nsequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Hi\n```';
     const html = markdownToStorageHtml(original);
 
-    // Verify upload produced the right structure
-    expect(html).toContain('<!-- mermaid:');
     expect(html).toContain('mermaid.ink');
-    const encoded = Buffer.from(
-      'sequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Hi',
-    ).toString('base64');
-    expect(html).toContain(`mermaid:${encoded}`);
+    expect(html).toContain('ac:name="expand"');
+    expect(html).toContain('Mermaid Diagram Source');
 
-    // Verify download reconstructs (wrap in <div> for linkedom compatibility)
     const md = storageToMarkdownBlocks(`<div>${html}</div>`)
       .map((b) => b.markdown)
       .join('\n');
@@ -784,6 +807,28 @@ describe('mermaid diagrams', () => {
     expect(md).toContain('sequenceDiagram');
     expect(md).toContain('Alice->>Bob: Hello');
     expect(md).toContain('Bob-->>Alice: Hi');
+  });
+
+  it('reconstructs mermaid from standalone expand macro (image stripped)', () => {
+    const source = 'graph TD\n    A --> B';
+    const storageHtml = `
+      <div>
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Mermaid Diagram Source</ac:parameter>
+        <ac:rich-text-body>
+          <ac:structured-macro ac:name="code">
+            <ac:plain-text-body><![CDATA[${source}]]></ac:plain-text-body>
+          </ac:structured-macro>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+      </div>
+    `;
+    const md = storageToMarkdownBlocks(storageHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('```mermaid');
+    expect(md).toContain('graph TD');
+    expect(md).toContain('A --> B');
   });
 });
 
@@ -851,6 +896,24 @@ describe('detectUnsupportedFeatures', () => {
     `;
     const unsupported = detectUnsupportedFeatures(html);
     expect(unsupported).toContain('expand/collapse sections');
+  });
+
+  it('does not flag mermaid expand macros as unsupported', () => {
+    const html = `
+      <ac:image ac:align="center" ac:width="800">
+        <ri:url ri:value="https://mermaid.ink/img/pako:abc123"/>
+      </ac:image>
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Mermaid Diagram Source</ac:parameter>
+        <ac:rich-text-body>
+          <ac:structured-macro ac:name="code">
+            <ac:plain-text-body><![CDATA[graph TD\n    A --> B]]></ac:plain-text-body>
+          </ac:structured-macro>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const unsupported = detectUnsupportedFeatures(html);
+    expect(unsupported).not.toContain('expand/collapse sections');
   });
 
   it('detects Jira integration macros', () => {

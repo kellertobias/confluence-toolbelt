@@ -5,6 +5,7 @@
  * nodeId tags, and to replace specific nodes by nodeId for partial updates.
  */
 
+import { deflateSync } from 'node:zlib';
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
@@ -64,9 +65,24 @@ export function detectUnsupportedFeatures(storageHtml: string): string[] {
     unsupported.push('page layout');
   }
 
-  // Expand macros
-  if (/<ac:structured-macro\b[^>]*\bac:name=["']expand["']/i.test(html)) {
-    unsupported.push('expand/collapse sections');
+  // Expand macros (exclude our own mermaid diagram source expands)
+  const expandMacros = html.match(
+    /<ac:structured-macro\b[^>]*\bac:name=["']expand["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi,
+  );
+  if (expandMacros) {
+    const hasNonMermaidExpand = expandMacros.some((m) => {
+      const title = (
+        m.match(
+          /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ''
+      )
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      return !/mermaid/i.test(title);
+    });
+    if (hasNonMermaidExpand) {
+      unsupported.push('expand/collapse sections');
+    }
   }
 
   // Excerpt and excerpt-include macros
@@ -452,16 +468,28 @@ export function markdownToStorageHtml(md: string): string {
       }
       const codeText = body.join('\n');
 
-      // Mermaid diagrams: render via mermaid.ink and preserve source in comment
       if (lang.toLowerCase() === 'mermaid') {
-        const encoded = Buffer.from(codeText).toString('base64');
-        const imgUrl = `https://mermaid.ink/img/base64:${encoded}`;
+        const state = JSON.stringify({
+          code: codeText,
+          mermaid: { theme: 'default' },
+        });
+        const compressed = deflateSync(Buffer.from(state), { level: 9 });
+        const pakoEncoded = compressed.toString('base64url');
+        const imgUrl = `https://mermaid.ink/img/pako:${pakoEncoded}?type=png`;
+        const codeBody = codeText.includes(']]>')
+          ? `<ac:plain-text-body>${escapeHtml(codeText)}</ac:plain-text-body>`
+          : `<ac:plain-text-body><![CDATA[${codeText}]]></ac:plain-text-body>`;
         out.push(
-          `<!-- mermaid:${encoded} -->` +
-            `<ac:image ac:align="center" ac:width="800">` +
+          `<ac:image ac:align="center" ac:width="800">` +
             `<ac:parameter ac:name="width">800</ac:parameter>` +
             `<ri:url ri:value="${escapeHtml(imgUrl)}"/>` +
-            `</ac:image>`,
+            `</ac:image>` +
+            `<ac:structured-macro ac:name="expand">` +
+            `<ac:parameter ac:name="title">Mermaid Diagram Source</ac:parameter>` +
+            `<ac:rich-text-body>` +
+            `<ac:structured-macro ac:name="code">${codeBody}</ac:structured-macro>` +
+            `</ac:rich-text-body>` +
+            `</ac:structured-macro>`,
         );
         continue;
       }
@@ -1239,10 +1267,43 @@ function normalizeMacros(html: string): string {
     },
   );
 
-  // Mermaid diagrams: comment with base64 source followed by mermaid.ink image → fenced block token
+  // Legacy mermaid: comment with base64 source + mermaid.ink image → fenced block token
   out = out.replace(
     /<!--\s*mermaid:([A-Za-z0-9+/=]+)\s*-->\s*<ac:image\b[^>]*>[\s\S]*?<\/ac:image>/gi,
     (_m, encoded) => `MD_MERMAID(${encoded})`,
+  );
+  // New mermaid: expand macro with "Mermaid" in title → extract source as MD_MERMAID token
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']expand["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (fullMatch, inner) => {
+      const title = (
+        inner.match(
+          /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ''
+      )
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      if (!/mermaid/i.test(title)) {
+        return fullMatch;
+      }
+      const codeBodyMatch = inner.match(
+        /<ac:plain-text-body[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
+      );
+      let code = codeBodyMatch?.[1] || '';
+      const cdata = code.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+      if (cdata) {
+        code = cdata[1] || '';
+      } else {
+        code = decodeBasicEntities(code);
+      }
+      const encoded = Buffer.from(code).toString('base64');
+      return `MD_MERMAID(${encoded})`;
+    },
+  );
+  // Suppress orphaned mermaid.ink images (source already captured from expand or comment above)
+  out = out.replace(
+    /<ac:image\b[^>]*>[\s\S]*?mermaid\.ink[\s\S]*?<\/ac:image>/gi,
+    '',
   );
 
   // Images with optional captions → durable token preserving URL/filename and caption
