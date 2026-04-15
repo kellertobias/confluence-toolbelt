@@ -451,6 +451,21 @@ export function markdownToStorageHtml(md: string): string {
         i++;
       }
       const codeText = body.join('\n');
+
+      // Mermaid diagrams: render via mermaid.ink and preserve source in comment
+      if (lang.toLowerCase() === 'mermaid') {
+        const encoded = Buffer.from(codeText).toString('base64');
+        const imgUrl = `https://mermaid.ink/img/base64:${encoded}`;
+        out.push(
+          `<!-- mermaid:${encoded} -->` +
+            `<ac:image ac:align="center" ac:width="800">` +
+            `<ac:parameter ac:name="width">800</ac:parameter>` +
+            `<ri:url ri:value="${escapeHtml(imgUrl)}"/>` +
+            `</ac:image>`,
+        );
+        continue;
+      }
+
       const langParam = lang
         ? `<ac:parameter ac:name="language">${escapeHtml(lang)}</ac:parameter>`
         : '';
@@ -1168,6 +1183,12 @@ function normalizeMacros(html: string): string {
     },
   );
 
+  // Mermaid diagrams: comment with base64 source followed by mermaid.ink image → fenced block token
+  out = out.replace(
+    /<!--\s*mermaid:([A-Za-z0-9+/=]+)\s*-->\s*<ac:image\b[^>]*>[\s\S]*?<\/ac:image>/gi,
+    (_m, encoded) => `MD_MERMAID(${encoded})`,
+  );
+
   // Images with optional captions → durable token preserving URL/filename and caption
   out = out.replace(
     /<ac:image\b[^>]*>([\s\S]*?)<\/ac:image>/gi,
@@ -1525,6 +1546,17 @@ function decodeMdCommentTokens(s: string): string {
     .replace(/(\S)<!--\s*comment:/g, '$1 <!-- comment:')
     .replace(/(\S)<!--\s*commend-end:/g, '$1 <!-- commend-end:')
     .replace(/-->\s*(\S)/g, '--> $1');
+
+  // Mermaid diagram tokens → fenced mermaid block (after spacing normalization
+  // to avoid mangling decoded content like -->> in sequence diagrams)
+  out = out.replace(
+    /MD(?:\\)?_MERMAID\(([A-Za-z0-9+/=]+)\)/g,
+    (_m, encoded) => {
+      const code = Buffer.from(String(encoded), 'base64').toString('utf8');
+      return `\`\`\`mermaid\n${code}\n\`\`\``;
+    },
+  );
+
   return out;
 }
 

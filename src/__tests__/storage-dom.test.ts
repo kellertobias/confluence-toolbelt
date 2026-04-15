@@ -528,6 +528,72 @@ describe('storageToMarkdownBlocks', () => {
   });
 });
 
+describe('mermaid diagrams', () => {
+  it('converts mermaid code block to comment + mermaid.ink image on upload', () => {
+    const md = '```mermaid\ngraph TD\n    A --> B\n```';
+    const html = markdownToStorageHtml(md);
+    const encoded = Buffer.from('graph TD\n    A --> B').toString('base64');
+    expect(html).toContain(`<!-- mermaid:${encoded} -->`);
+    expect(html).toContain('<ac:image');
+    expect(html).toContain(
+      `ri:value="https://mermaid.ink/img/base64:${encoded}"`,
+    );
+  });
+
+  it('does not affect non-mermaid code blocks', () => {
+    const md = '```typescript\nconst x = 1;\n```';
+    const html = markdownToStorageHtml(md);
+    expect(html).not.toContain('mermaid');
+    expect(html).toContain('ac:name="code"');
+    expect(html).toContain('ac:name="language">typescript');
+  });
+
+  it('reconstructs mermaid code block on download', () => {
+    const source = 'graph LR\n    X --> Y';
+    const encoded = Buffer.from(source).toString('base64');
+    const storageHtml = `
+      <p>Intro</p>
+      <!-- mermaid:${encoded} -->
+      <ac:image ac:align="center" ac:width="800">
+        <ac:parameter ac:name="width">800</ac:parameter>
+        <ri:url ri:value="https://mermaid.ink/img/base64:${encoded}"/>
+      </ac:image>
+      <p>After</p>
+    `;
+    const md = storageToMarkdownBlocks(storageHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('```mermaid');
+    expect(md).toContain('graph LR');
+    expect(md).toContain('X --> Y');
+    expect(md).toContain('```');
+    expect(md).not.toContain('mermaid.ink');
+  });
+
+  it('round-trips mermaid diagrams without data loss', () => {
+    const original =
+      '```mermaid\nsequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Hi\n```';
+    const html = markdownToStorageHtml(original);
+
+    // Verify upload produced the right structure
+    expect(html).toContain('<!-- mermaid:');
+    expect(html).toContain('mermaid.ink');
+    const encoded = Buffer.from(
+      'sequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Hi',
+    ).toString('base64');
+    expect(html).toContain(`mermaid:${encoded}`);
+
+    // Verify download reconstructs (wrap in <div> for linkedom compatibility)
+    const md = storageToMarkdownBlocks(`<div>${html}</div>`)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('```mermaid');
+    expect(md).toContain('sequenceDiagram');
+    expect(md).toContain('Alice->>Bob: Hello');
+    expect(md).toContain('Bob-->>Alice: Hi');
+  });
+});
+
 describe('inline comment wrapper round-trip', () => {
   it('wraps commented ranges in markdown on download', () => {
     const html = `

@@ -74,55 +74,308 @@ Both download and upload commands automatically commit changes to git for versio
 
 ## Markdown Format
 
-We store the confluence page content in markdown files. The markdown format is slightly modified to support the confluence storage format and especially confluence widgets. This also means that we might not support all layouting features of Confluence.
+Page content is stored as markdown files with a few extensions for Confluence-specific features. This means not all Confluence layouting features are supported, but the most common ones work well.
 
-### Confirmed Widgets & Layouting Features:
+We also try to preserve inline comments as well as possible, but this behavior is not yet exhaustively tested.
 
-- Page Title & Status
-- Tables (No Column Spanning & Cell Styles yet)
-- Lists
-- Headings
-- Paragraphs
-- Inline formatting (bold, italic, code, links, mentions)
-- Block formatting (block quotes, info panels)
-- TOC (Table of Contents)
-- Code Blocks
-- Images
+### File Header
 
-We also try to contain comments as well as possible, but this behavior is not yet exhaustively tested.
+Every file starts with an HTML comment header containing page metadata. This is generated automatically on download.
 
-### Header format (must be at the top of the file)
-
-```
+```markdown
 <!--
-spaceId: 123
-pageId: 456
-title: Page Title
+spaceId: 123456
+pageId: 789012
+title: My Page Title
 status: green:In Progress
+-->
+
+Page content starts here...
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `spaceId` | Yes | Confluence space ID |
+| `pageId` | Yes | Confluence page ID |
+| `title` | No | Override the page title on upload |
+| `status` | No | Status label in format `color:Label`, e.g. `green:In Progress` |
+| `READONLY` | No | Flag (no value) — file will be downloaded but never uploaded |
+
+A read-only file looks like this:
+
+```markdown
+<!--
+READONLY
+spaceId: 123456
+pageId: 789012
+title: Reference Architecture
 -->
 ```
 
-#### Optional Header Fields
+### Headings
 
-- **`READONLY`**: When this flag is present (must be first line after `<!--`), the file will be downloaded but never uploaded. Useful for reference pages that should not be modified locally.
-  ```
-  <!--
-  READONLY
-  spaceId: 123
-  pageId: 456
-  -->
-  ```
-- **`title`**: Override the page title (optional)
-- **`status`**: Add a status label to the page title in format `color:Label text`, e.g., `green:In Progress` (optional)
+Standard markdown headings (h1 through h6):
 
-### Inline tag format (place immediately before a block you want to map)
-
-There are tags placed in the markdown that control how we map the markdown back to the confluence storage format. These tags should not be removed, since otherwise the changes will not be applied correctly.
-
-```
-# example:
-<!-- tag:content nodeId:789 -->
+```markdown
+# Heading 1
+## Heading 2
+### Heading 3
+#### Heading 4
+##### Heading 5
+###### Heading 6
 ```
 
+### Paragraphs
 
+Plain text separated by blank lines becomes paragraphs. Consecutive lines without a blank line are joined into a single paragraph.
+
+```markdown
+This is the first paragraph. It can span
+multiple lines and they will be joined.
+
+This is a second paragraph.
+```
+
+### Inline Formatting
+
+```markdown
+This is **bold text** and this is `inline code`.
+```
+
+### Links
+
+Several link types are supported:
+
+```markdown
+<!-- External URL -->
+[Atlassian](https://www.atlassian.com)
+
+<!-- Link to another Confluence page by title (same space) -->
+[Design Doc](page:Design Document)
+
+<!-- Link to a page in a different space by title -->
+[Other Doc](page:SPACEKEY:Page Title)
+
+<!-- Link to a page by ID (cross-space, rename-proof) -->
+[Architecture](pageid:123456)
+
+<!-- Link to a local .md file (resolved to pageid: on upload) -->
+[TDD - Care Import](REFS/TDD-Care-Import.md)
+
+<!-- Link to an attachment on the current page -->
+[Download Report](#attachment:report.pdf)
+```
+
+Local `.md` file links are resolved automatically on upload: the tool reads the target file's header, extracts its `pageId`, and rewrites the link to a Confluence page reference. Links are resolved relative to the current file first, then relative to the workspace root. If the target file is missing or has no `pageId`, the original link is kept unchanged (with a console warning).
+
+### Mentions
+
+User mentions are stored as HTML comments:
+
+```markdown
+Assigned to <!-- mention:abc-123-def @John Smith --> for review.
+```
+
+These are converted to Confluence `@mention` macros on upload and reconstructed on download.
+
+### Images
+
+```markdown
+<!-- External image (displayed at 500px width, centered) -->
+![Alt text](https://example.com/image.png)
+
+<!-- Reference an image already attached to the Confluence page -->
+![Screenshot](#filename.png)
+
+<!-- Image with caption (next non-blank line becomes the caption) -->
+![](https://example.com/diagram.png)
+This is the caption text
+```
+
+The `#filename.png` syntax references files that are **already attached to the Confluence page** (uploaded via the Confluence UI or API). This tool does not upload local image files as attachments.
+
+### Tables
+
+Standard GFM (GitHub Flavored Markdown) pipe tables:
+
+```markdown
+| Feature      | Status    | Owner   |
+| ------------ | --------- | ------- |
+| Auth Service | Done      | Alice   |
+| Data Layer   | In Review | Bob     |
+| Frontend     | WIP       | Charlie |
+```
+
+Cell background colors can be preserved with inline comments:
+
+```markdown
+| Status     | Notes                          |
+| ---------- | ------------------------------ |
+| OK         | All good <!-- cell:bg:green --> |
+| Needs Work | See below <!-- cell:bg:red -->  |
+```
+
+### Lists
+
+```markdown
+<!-- Unordered list -->
+- First item
+- Second item
+- Third item
+
+<!-- Ordered list -->
+1. Step one
+2. Step two
+3. Step three
+
+<!-- Ordered list starting at a custom number -->
+5. Fifth item
+6. Sixth item
+```
+
+### Code Blocks
+
+Fenced code blocks with optional language for syntax highlighting:
+
+````markdown
+```typescript
+interface User {
+  id: string;
+  name: string;
+}
+```
+````
+
+Indented code blocks (4+ spaces) are also supported:
+
+```markdown
+    const x = 1;
+    console.log(x);
+```
+
+### Mermaid Diagrams
+
+Mermaid code blocks are automatically rendered as images on Confluence using [mermaid.ink](https://mermaid.ink). No Confluence plugins required.
+
+````markdown
+```mermaid
+graph TD
+    A[Client] --> B[API Gateway]
+    B --> C[Auth Service]
+    B --> D[Data Service]
+    C --> E[(Database)]
+    D --> E
+```
+````
+
+On upload, this produces a rendered diagram image visible on the Confluence page. The mermaid source is preserved in a hidden HTML comment so downloading the page reconstructs the original fenced block for local editing.
+
+All mermaid diagram types work: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, Gantt charts, etc.
+
+````markdown
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as API
+    participant DB as Database
+    U->>A: POST /login
+    A->>DB: SELECT user
+    DB-->>A: user record
+    A-->>U: 200 OK + token
+```
+````
+
+**Note:** Rendering requires internet access. The source code is always preserved regardless of service availability.
+
+### Blockquotes
+
+```markdown
+> This is a simple blockquote.
+> It can span multiple lines.
+```
+
+### Info Panels
+
+Confluence info/warning/note/tip panels use a special comment tag inside a blockquote:
+
+```markdown
+<!-- Info panel (blue) -->
+> <!-- panel:info:info -->
+> This is an informational message.
+
+<!-- Warning panel (yellow) -->
+> <!-- panel:warning:warning -->
+> Be careful with this operation.
+
+<!-- Note panel -->
+> <!-- panel:note:note -->
+> Keep this in mind.
+
+<!-- Tip panel (green) -->
+> <!-- panel:tip:tip -->
+> Here's a useful tip.
+
+<!-- Success panel -->
+> <!-- panel:success:success -->
+> The deployment was successful.
+
+<!-- Error panel -->
+> <!-- panel:error:error -->
+> Something went wrong.
+
+<!-- Generic panel with custom background color -->
+> <!-- panel:#f0f0f0:panel -->
+> Panel with a custom background color.
+```
+
+### Status Tags
+
+Inline status labels (colored badges):
+
+```markdown
+<!-- status:green:Done -->
+<!-- status:yellow:In Progress -->
+<!-- status:red:Blocked -->
+<!-- status:grey:To Do -->
+```
+
+### Table of Contents
+
+```markdown
+<!-- widget:TOC -->
+```
+
+This generates a Confluence Table of Contents macro that automatically lists all headings on the page.
+
+### Horizontal Rules
+
+```markdown
+-------
+```
+
+Use seven hyphens for a horizontal rule (separator line).
+
+### Inline Comments
+
+Confluence inline comments are preserved using paired HTML comment tags:
+
+```markdown
+This has <!-- comment:abc123 -->commented text<!-- commend-end:abc123 --> in it.
+```
+
+These round-trip through download/upload and map to Confluence's inline comment markers.
+
+### Node ID Tags
+
+When you download a page, each content block gets a node ID tag. These enable partial updates — only the blocks you changed get updated on the remote page, leaving other content untouched.
+
+```markdown
+<!-- node:a1b2c3d4 -->
+## Section Title
+
+<!-- node:e5f6g7h8 -->
+This paragraph has its own node ID.
+```
+
+These tags should not be removed. If all node IDs are present, upload performs a surgical partial update. If any are missing, the tool falls back to a full page replacement.
 
