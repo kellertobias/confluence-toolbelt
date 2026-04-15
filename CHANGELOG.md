@@ -1,3 +1,8 @@
+## 1.5.0 (2026-04-15)
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([c033745](https://github.com/kellertobias/confluence-toolbelt/commit/c033745))
+* feat: enhance table handling in markdown ([a4c05cf](https://github.com/kellertobias/confluence-toolbelt/commit/a4c05cf))
+
 ## 1.4.0 (2026-04-15)
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([a231e97](https://github.com/kellertobias/confluence-toolbelt/commit/a231e97))
