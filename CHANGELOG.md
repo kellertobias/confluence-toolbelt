@@ -1,3 +1,8 @@
+## <small>1.6.1 (2026-04-15)</small>
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([64cc26b](https://github.com/kellertobias/confluence-toolbelt/commit/64cc26b))
+* fix: mermaid download ([fec8ec6](https://github.com/kellertobias/confluence-toolbelt/commit/fec8ec6))
+
 ## 1.6.0 (2026-04-15)
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([7271bc1](https://github.com/kellertobias/confluence-toolbelt/commit/7271bc1))
