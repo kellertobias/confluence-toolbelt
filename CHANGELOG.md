@@ -1,3 +1,8 @@
+## 1.3.0 (2026-04-14)
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([f10b15d](https://github.com/kellertobias/confluence-toolbelt/commit/f10b15d))
+* feat: implement local markdown link resolution to Confluence page IDs ([9667c60](https://github.com/kellertobias/confluence-toolbelt/commit/9667c60))
+
 ## <small>1.2.5 (2026-04-14)</small>
 
 * fix: release ([83695d5](https://github.com/kellertobias/confluence-toolbelt/commit/83695d5))
