@@ -1,3 +1,8 @@
+## 1.6.0 (2026-04-15)
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([7271bc1](https://github.com/kellertobias/confluence-toolbelt/commit/7271bc1))
+* feat: enhance table width and column configuration support ([3bbbb22](https://github.com/kellertobias/confluence-toolbelt/commit/3bbbb22))
+
 ## 1.5.0 (2026-04-15)
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([c033745](https://github.com/kellertobias/confluence-toolbelt/commit/c033745))
