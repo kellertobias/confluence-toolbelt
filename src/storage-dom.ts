@@ -927,6 +927,21 @@ function consumeListAtIndent(
     const raw = lines[i] || "";
 
     if (/^\s*$/.test(raw)) {
+      // Peek past blank lines: if a list item at same or deeper indent follows, continue the list
+      let peek = i + 1;
+      while (peek < lines.length && /^\s*$/.test(lines[peek] || "")) {
+        peek++;
+      }
+      if (peek < lines.length) {
+        const nextLine = lines[peek] || "";
+        const nextIndent = nextLine.match(/^(\s*)/)?.[0]?.length || 0;
+        const isListItem =
+          /^\s*[-*]\s+/.test(nextLine) || /^\s*\d+\.\s+/.test(nextLine);
+        if (isListItem && nextIndent >= indent) {
+          i = peek;
+          continue;
+        }
+      }
       break;
     }
 

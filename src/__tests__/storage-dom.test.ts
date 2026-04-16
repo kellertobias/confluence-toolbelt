@@ -192,6 +192,31 @@ describe('storageToMarkdownBlocks', () => {
     expect(html).toContain('<ul><li>Parent<ul><li>Child 1</li><li>Child 2</li></ul></li><li>Another parent</li></ul>');
   });
 
+  it('produces nested <ul> when blank line separates parent from sub-list', () => {
+    const md = [
+      '*   **PIM** — Product Information Management',
+      '',
+      '*   **CuMo** — Curriculum Management',
+      '',
+      '*   Other consuming systems:',
+      '    ',
+      '    *   MyCampus, Learning Systems',
+      '    *   Syntea',
+      '    *   Salesforce',
+      '    *   Website Forms',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // Sub-items must be nested inside the parent, not a separate flat list
+    expect(html).toContain('<li>Other consuming systems:<ul>');
+    expect(html).toContain('<li>MyCampus, Learning Systems</li>');
+    expect(html).toContain('<li>Syntea</li>');
+    expect(html).toContain('<li>Salesforce</li>');
+    expect(html).toContain('<li>Website Forms</li>');
+    // Should be a single <ul>, not two separate ones
+    const ulCount = (html.match(/<ul>/g) || []).length;
+    expect(ulCount).toBe(2); // outer + nested
+  });
+
   it('produces nested <ol> for indented ordered sub-lists', () => {
     const md = [
       '1. First',
