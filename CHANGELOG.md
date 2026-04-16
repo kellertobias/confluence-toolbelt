@@ -1,3 +1,7 @@
+## 1.7.0 (2026-04-16)
+
+* feat(markdown-import): improve nested list handling for markdown ([5240fd8](https://github.com/kellertobias/confluence-toolbelt/commit/5240fd8))
+
 ## <small>1.6.1 (2026-04-15)</small>
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([64cc26b](https://github.com/kellertobias/confluence-toolbelt/commit/64cc26b))
