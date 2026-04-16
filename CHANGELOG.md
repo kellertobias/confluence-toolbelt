@@ -1,3 +1,9 @@
+## 1.8.0 (2026-04-16)
+
+* fix: improve nested markdown list detection with blank lines ([4cbb40d](https://github.com/kellertobias/confluence-toolbelt/commit/4cbb40d))
+* feat: handle nreq rejected requirement rows in storage ([899c0a6](https://github.com/kellertobias/confluence-toolbelt/commit/899c0a6))
+* feat: improve markdown conversion accuracy in storage-dom tests ([576bc0d](https://github.com/kellertobias/confluence-toolbelt/commit/576bc0d))
+
 ## 1.7.0 (2026-04-16)
 
 * feat(markdown-import): improve nested list handling for markdown ([5240fd8](https://github.com/kellertobias/confluence-toolbelt/commit/5240fd8))
