@@ -917,6 +917,68 @@ describe('inline comment wrapper round-trip', () => {
   });
 });
 
+describe('nREQ rejected requirement rows', () => {
+  it('uploads nREQ row with all cells struck through and REQ token', () => {
+    const md = [
+      '| ID | Description | Priority |',
+      '| --- | --- | --- |',
+      '| REQ(F1, MUST) | System shall do X | High |',
+      '| nREQ(F2, SHOULD) | System shall do Y | Medium |',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // REQ row: no strikethrough
+    expect(html).toContain('<td><p>REQ(F1, MUST)</p></td>');
+    // nREQ row: every cell wrapped in <s>, token converted back to REQ
+    expect(html).toContain('<td><p><s>REQ(F2, SHOULD)</s></p></td>');
+    expect(html).toContain('<td><p><s>System shall do Y</s></p></td>');
+    expect(html).toContain('<td><p><s>Medium</s></p></td>');
+    // nREQ itself must not appear in storage
+    expect(html).not.toContain('nREQ');
+  });
+
+  it('downloads struck-through REQ cell as nREQ', () => {
+    const html = `
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><p>REQ(F1, MUST)</p></td>
+            <td><p>Normal requirement</p></td>
+          </tr>
+          <tr>
+            <td><p><s>REQ(F2, SHOULD)</s></p></td>
+            <td><p><s>Rejected requirement</s></p></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html).map((b) => b.markdown).join('\n');
+    expect(md).toContain('| REQ(F1, MUST) |');
+    expect(md).toContain('| nREQ(F2, SHOULD) |');
+    // The non-REQ struck-through cell should come through as plain text
+    expect(md).toContain('Rejected requirement');
+  });
+
+  it('round-trips nREQ through storage HTML without data loss', () => {
+    const original = [
+      '| ID | Description |',
+      '| --- | --- |',
+      '| REQ(F1, MUST) | Active requirement |',
+      '| nREQ(F2, SHOULD) | Rejected requirement |',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    const md = storageToMarkdownBlocks(`<div>${html}</div>`)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('| REQ(F1, MUST) |');
+    expect(md).toContain('| nREQ(F2, SHOULD) |');
+    expect(md).toContain('Active requirement');
+    expect(md).toContain('Rejected requirement');
+  });
+});
+
 describe('detectUnsupportedFeatures', () => {
   it('detects multi-column layouts (section/column macros)', () => {
     const html = `

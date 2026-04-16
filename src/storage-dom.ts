@@ -807,9 +807,16 @@ function consumeTable(
   parts.push('</tr></thead>');
   parts.push('<tbody>');
   for (const r of bodyRows) {
+    const hasNReq = r.some((c) => /\bnREQ\s*\(/i.test(c));
     parts.push('<tr>');
     for (const c of r) {
-      parts.push(`<td>${cellHtml(c)}</td>`);
+      if (hasNReq) {
+        const normalizedCell = c.replace(/\bnREQ\s*\(/gi, 'REQ(');
+        const innerHtml = cellHtml(normalizedCell);
+        parts.push(`<td>${wrapCellContentInStrikethrough(innerHtml)}</td>`);
+      } else {
+        parts.push(`<td>${cellHtml(c)}</td>`);
+      }
     }
     parts.push('</tr>');
   }
@@ -821,6 +828,17 @@ function splitRow(row: string): string[] {
   // Remove leading/trailing pipe and split
   const trimmed = row.trim().replace(/^\|/, '').replace(/\|$/, '');
   return trimmed.split('|').map((c) => c.trim());
+}
+
+function wrapCellContentInStrikethrough(html: string): string {
+  if (!html.trim()) {
+    return html;
+  }
+  // Wrap <p>content</p> → <p><s>content</s></p>
+  if (/^<p[^>]*>/i.test(html)) {
+    return html.replace(/^(<p[^>]*>)([\s\S]*)(<\/p>)$/i, '$1<s>$2</s>$3');
+  }
+  return `<s>${html}</s>`;
 }
 
 function cellHtml(cell: string): string {
@@ -1602,6 +1620,13 @@ function renderTableMarkdown(tableEl: Element): string {
 function getCellTextWithComments(cell: Element): string {
   const anyCell: any = cell as any;
   let html = String(anyCell.innerHTML || '');
+  // Detect if cell content is struck through (<s> or <del> wrapping)
+  const strippedForDetect = html.replace(/<!--[\s\S]*?-->/g, '').trim();
+  const cellIsStrikethrough =
+    /^<p[^>]*><(?:s|del)[^>]*>[\s\S]*<\/(?:s|del)><\/p>$/i.test(strippedForDetect) ||
+    /^<(?:s|del)[^>]*>[\s\S]*<\/(?:s|del)>$/i.test(strippedForDetect);
+  // Strip <s>/<del> tags (content kept, strike formatting dropped — nREQ token handles it)
+  html = html.replace(/<\/?(?:s|del)\b[^>]*>/gi, '');
   // Extract styling color markers encoded as MD_COMMENT tokens or real comments
   let styleColor: string | undefined;
   html = html.replace(/MD_COMMENT\(([^)]+)\)/g, (_m, enc) => {
@@ -1638,6 +1663,10 @@ function getCellTextWithComments(cell: Element): string {
   text = text.replace(/\r?\n/g, ' ');
   // Normalize spaces around, collapsing multiple spaces to one
   text = text.replace(/[ \t]+/g, ' ').trim();
+  // If cell was struck through, convert REQ( → nREQ( to signal a rejected requirement
+  if (cellIsStrikethrough) {
+    text = text.replace(/\bREQ\s*\(/g, 'nREQ(');
+  }
   if (styleColor) {
     text = text.length
       ? `${text} <!-- cell:bg:${styleColor} -->`
