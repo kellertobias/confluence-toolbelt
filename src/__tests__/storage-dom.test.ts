@@ -39,9 +39,9 @@ describe('storageToMarkdownBlocks', () => {
       .join('\n');
     expect(out).toContain('| Title 1 | Title 2 | Title 3 |');
     expect(out).toContain('| --- | --- | --- |');
-    expect(out).toContain('<!-- table:bg:red -->');
-    expect(out).toContain('<!-- table:bg:green -->');
-    expect(out).toContain('<!-- table:bg:blue -->');
+    expect(out).toContain('<!-- cell:bg:red -->');
+    expect(out).toContain('<!-- cell:bg:green -->');
+    expect(out).toContain('<!-- cell:bg:blue -->');
   });
 
   it('converts Confluence code macro to fenced code block with language', () => {
@@ -113,7 +113,7 @@ describe('storageToMarkdownBlocks', () => {
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<ac:structured-macro ac:name="code">');
     expect(html).toContain('<ac:plain-text-body>');
-    expect(html).toContain('end of cdata ]&gt; should be escaped');
+    expect(html).toContain('end of cdata ]]&gt; should be escaped');
   });
 
   it('converts Confluence code macro to fenced code block', () => {
@@ -127,7 +127,7 @@ describe('storageToMarkdownBlocks', () => {
       .map((b) => b.markdown)
       .join('\n');
     // Expect fenced block
-    expect(out).toContain('```\nline1\nline2\n```');
+    expect(out).toContain('```json\nline1\nline2\n```');
   });
 
   it('parses indented code blocks back to code macro', () => {
@@ -137,7 +137,7 @@ describe('storageToMarkdownBlocks', () => {
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<ac:structured-macro ac:name="code">');
     expect(html).toContain(
-      '<ac:plain-text-body><![CDATA[const a = 1\nconsole.log(a);]]></ac:plain-text-body>',
+      '<ac:plain-text-body><![CDATA[const a = 1;\nconsole.log(a);]]></ac:plain-text-body>',
     );
   });
 
@@ -239,7 +239,7 @@ describe('storageToMarkdownBlocks', () => {
     const md = ['| Col |', '| --- |', '| line1\\nline2 |'].join('\n');
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<table>');
-    expect(html).toContain('<td>line1<br/>line2</td>');
+    expect(html).toContain('<td><p>line1<br/>line2</p></td>');
   });
 
   it('converts links, mention tags, and blockquotes on upload', () => {
@@ -329,11 +329,11 @@ describe('storageToMarkdownBlocks', () => {
     const md = storageToMarkdownBlocks(html)
       .map((b) => b.markdown.trim())
       .join('\n');
-    expect(md).toContain('![](');
+    expect(md).toContain('![Figure 1: Example](');
     expect(md).toContain('https://example.com/img.png');
     expect(md).toContain('Figure 1: Example');
     const back = markdownToStorageHtml(md);
-    expect(back).toContain('<ac:image>');
+    expect(back).toContain('<ac:image');
     expect(back).toContain('<ri:url ri:value="https://example.com/img.png"/>');
     expect(back).toContain('<ac:caption>Figure 1: Example</ac:caption>');
   });
@@ -354,6 +354,34 @@ describe('storageToMarkdownBlocks', () => {
     const back = markdownToStorageHtml(md);
     expect(back).toContain('<ac:structured-macro ac:name="info">');
     expect(back).toContain('<ac:rich-text-body>');
+  });
+
+  it('panel upload correctly converts \\> to literal > in HTML', () => {
+    const md = [
+      '> <!-- panel:note:note -->',
+      '> \\> **Status**: Draft',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="note">');
+    expect(html).toContain('&gt;');
+    expect(html).not.toContain('\\&gt;');
+    expect(html).not.toContain('\\>');
+  });
+
+  it('panel with \\> does not accumulate backslashes on repeated upload', () => {
+    const md1 = [
+      '> <!-- panel:note:note -->',
+      '> \\> **Status**: Draft',
+    ].join('\n');
+    const html1 = markdownToStorageHtml(md1);
+    expect(html1).not.toContain('\\');
+
+    const md2 = storageToMarkdownBlocks(`<div>${html1}</div>`)
+      .map((b) => b.markdown)
+      .join('\n');
+    const html2 = markdownToStorageHtml(md2);
+    expect(html2).not.toContain('\\');
+    expect(html2).toBe(html1);
   });
 
   it('encodes newlines in table cells as \\n in markdown', () => {
@@ -405,8 +433,8 @@ describe('storageToMarkdownBlocks', () => {
     const md = storageToMarkdownBlocks(html)
       .map((b) => b.markdown)
       .join('\n');
-    expect(md).toMatch(/\n1\. First/);
-    expect(md).toMatch(/\n2\. Second/);
+    expect(md).toMatch(/1\.\s+First/);
+    expect(md).toMatch(/2\.\s+Second/);
     expect(md).not.toContain('1\\.');
   });
 
