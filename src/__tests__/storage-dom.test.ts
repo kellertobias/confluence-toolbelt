@@ -155,6 +155,60 @@ describe('storageToMarkdownBlocks', () => {
     expect(html).toContain('<ul><li>Item 1</li><li>Item 2</li></ul>');
   });
 
+  it('does not treat indented list items as code blocks on upload', () => {
+    const md = [
+      '- Parent item',
+      '    - Sub item 1',
+      '    - Sub item 2',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).not.toContain('ac:name="code"');
+    expect(html).toContain('<ul>');
+    expect(html).toContain('<li>Parent item');
+    expect(html).toContain('<li>Sub item 1</li>');
+    expect(html).toContain('<li>Sub item 2</li>');
+  });
+
+  it('handles fully-indented list without parent as a list, not code', () => {
+    const md = [
+      '    - Item 1',
+      '    - Item 2',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).not.toContain('ac:name="code"');
+    expect(html).toContain('<ul>');
+    expect(html).toContain('<li>Item 1</li>');
+    expect(html).toContain('<li>Item 2</li>');
+  });
+
+  it('produces nested <ul> for indented unordered sub-lists', () => {
+    const md = [
+      '- Parent',
+      '    - Child 1',
+      '    - Child 2',
+      '- Another parent',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ul><li>Parent<ul><li>Child 1</li><li>Child 2</li></ul></li><li>Another parent</li></ul>');
+  });
+
+  it('produces nested <ol> for indented ordered sub-lists', () => {
+    const md = [
+      '1. First',
+      '    1. Sub first',
+      '    2. Sub second',
+      '2. Second',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ol><li>First<ol><li>Sub first</li><li>Sub second</li></ol></li><li>Second</li></ol>');
+  });
+
+  it('still treats 4-space indented non-list text as code block', () => {
+    const md = ['    const x = 1;', '    console.log(x);'].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('ac:name="code"');
+  });
+
   it('converts ordered lists with inline formatting on upload', () => {
     const md = [
       'This has had compounding effects:',

@@ -508,7 +508,8 @@ export function markdownToStorageHtml(md: string): string {
     }
 
     // Indented code blocks (four or more leading spaces). Consume contiguous block.
-    if (/^ {4,}\S/.test(line)) {
+    // Skip lines that look like indented list items to avoid eating nested lists.
+    if (/^ {4,}\S/.test(line) && !/^\s*[-*]\s+/.test(line) && !/^\s*\d+\.\s+/.test(line)) {
       const body: string[] = [];
       while (
         i < lines.length &&
@@ -874,14 +875,55 @@ function consumeList(
   start: number,
   kind: 'unordered' | 'ordered',
 ): { html: string; nextIndex: number } {
+  const baseIndent = (lines[start] || '').match(/^(\s*)/)?.[0]?.length || 0;
+  return consumeListAtIndent(lines, start, kind, baseIndent);
+}
+
+/**
+ * Recursively consume list items at a given indentation level, producing
+ * nested <ul>/<ol> when deeper-indented items are encountered.
+ */
+function consumeListAtIndent(
+  lines: string[],
+  start: number,
+  kind: 'unordered' | 'ordered',
+  indent: number,
+): { html: string; nextIndex: number } {
   const items: string[] = [];
   let i = start;
   let orderedStart: number | undefined;
-  const listRe =
-    kind === 'ordered' ? /^\s*(\d+)\.\s+(.+)$/ : /^\s*[-*]\s+(.+)$/;
 
   while (i < lines.length) {
     const raw = lines[i] || '';
+
+    if (/^\s*$/.test(raw)) {
+      break;
+    }
+
+    const currentIndent = (raw.match(/^(\s*)/)?.[0]?.length) || 0;
+
+    // Less indented → this level is done
+    if (currentIndent < indent) {
+      break;
+    }
+
+    // More indented → start a nested sub-list
+    if (currentIndent > indent) {
+      const subKind = /^\s*\d+\.\s+/.test(raw) ? 'ordered' as const : 'unordered' as const;
+      const sub = consumeListAtIndent(lines, i, subKind, currentIndent);
+      if (items.length > 0) {
+        // Attach sub-list inside the last <li>
+        items[items.length - 1] = items[items.length - 1]!.replace(/<\/li>$/, `${sub.html}</li>`);
+      } else {
+        items.push(`<li>${sub.html}</li>`);
+      }
+      i = sub.nextIndex;
+      continue;
+    }
+
+    // Same indent level — must match the current list kind
+    const listRe =
+      kind === 'ordered' ? /^\s*(\d+)\.\s+(.+)$/ : /^\s*[-*]\s+(.+)$/;
     const match = raw.match(listRe);
     if (!match) {
       break;
