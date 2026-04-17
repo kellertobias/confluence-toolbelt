@@ -56,6 +56,32 @@ Then run a `npx @tobisk/confluence-tools upload` (or `npm run confluence:upload`
 
 The interactive menu shows all files with a `pageId` (excluding READONLY files), with changed files listed first.
 
+### Creating New Pages
+
+You can create new Confluence pages directly from the CLI. There are two non-interactive modes driven by an existing local markdown file whose header has a `pageId`:
+
+```bash
+# Create a new page that is a SIBLING of the source page (same parent)
+npx @tobisk/confluence-tools create sibling docs/existing.md docs/new-sibling.md
+
+# Create a new page that is a CHILD of the source page
+npx @tobisk/confluence-tools create child docs/existing.md docs/new-child.md
+
+# Override the derived page title
+npx @tobisk/confluence-tools create child docs/existing.md docs/api-guide.md --title "API Guide"
+```
+
+Both commands will:
+- Read the source file's header to resolve its `pageId` and `spaceId`
+- Look up the source page on Confluence to determine its parent (for `sibling`) or use it as parent (for `child`)
+- Create a new empty page in the same space
+- Write a new markdown file at the target path containing only the header with the new `pageId`, `spaceId`, and `title`
+- Automatically commit the new file to git (unless `NO_AUTO_COMMIT` is set)
+
+If `--title` is not provided, the title is derived from the target filename (dashes and underscores become spaces, words are capitalized). For example, `new-api-guide.md` becomes `New Api Guide`.
+
+You can also still run `npx @tobisk/confluence-tools create` with no subcommand to launch an interactive wizard that prompts for parent URL, space ID, and title.
+
 ### Create a Jira Task
 
 Using Jira can be a hassle, especially if your company has an inflation of custom fields that all need to be set for each new task. This tool helps you create Jira tasks from the command line with the default values, e.g. Team, Project, etc. already set (Set them once in the .env file and you're good to go).

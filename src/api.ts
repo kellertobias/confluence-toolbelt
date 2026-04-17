@@ -18,6 +18,8 @@ export interface PageResponseV2 {
   id: string;
   title: string;
   spaceId?: string;
+  parentId?: string;
+  parentType?: string;
   body?: { storage?: { value?: string } };
   version?: { number: number };
 }

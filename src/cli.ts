@@ -32,7 +32,11 @@ function printHelp() {
       '                                              #   [file...]: upload specific files',
       '                                              #   (no args): interactive menu or git changes',
       '  cli sync                                    # Placeholder: download then upload with diff preview (TBD)',
-      '  cli create                                  # Create a new page under a parent',
+      '  cli create                                  # Interactive wizard: create a new page under a parent',
+      '  cli create sibling <src.md> <new.md> [--title "..."]',
+      "                                              #   Create page as a sibling of <src.md> (same parent)",
+      '  cli create child   <src.md> <new.md> [--title "..."]',
+      "                                              #   Create page as a child of <src.md>",
       '  cli task                                    # Create a Jira task (reads .env defaults)',
       '',
       'Env:',
@@ -68,8 +72,8 @@ async function main() {
       break;
     case 'create':
       {
-        const { createPageWizard } = await import('./commands/create.js');
-        await createPageWizard({ cwd: process.cwd() });
+        const { createPage } = await import('./commands/create.js');
+        await createPage({ cwd: process.cwd(), args });
       }
       break;
     case 'task':
