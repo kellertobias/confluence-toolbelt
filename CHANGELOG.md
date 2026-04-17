@@ -1,3 +1,7 @@
+## 1.10.0 (2026-04-17)
+
+* feat(confluence): add page creation commands for siblings and children ([bfea420](https://github.com/kellertobias/confluence-toolbelt/commit/bfea420))
+
 ## 1.9.0 (2026-04-17)
 
 * feat(markdown): add requirement list support for upload and download ([cdf7c83](https://github.com/kellertobias/confluence-toolbelt/commit/cdf7c83))
