@@ -155,6 +155,28 @@ describe('storageToMarkdownBlocks', () => {
     expect(html).toContain('<ul><li>Item 1</li><li>Item 2</li></ul>');
   });
 
+  it('does not swallow a list into a preceding paragraph without a blank line', () => {
+    const md = [
+      '**Pros:**',
+      '- Simpler infrastructure.',
+      '- Full control over combining data.',
+      '- No new bottleneck team.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<p><strong>Pros:</strong></p>');
+    expect(html).toContain(
+      '<ul><li>Simpler infrastructure.</li><li>Full control over combining data.</li><li>No new bottleneck team.</li></ul>',
+    );
+  });
+
+  it('breaks a paragraph before a heading without a blank line', () => {
+    const md = ['Intro sentence.', '## Next section', 'Body.'].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<p>Intro sentence.</p>');
+    expect(html).toContain('<h2>Next section</h2>');
+    expect(html).toContain('<p>Body.</p>');
+  });
+
   it('does not treat indented list items as code blocks on upload', () => {
     const md = [
       '- Parent item',

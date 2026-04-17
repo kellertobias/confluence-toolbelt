@@ -1,0 +1,330 @@
+/**
+ * Normalize Confluence storage HTML into DOM-friendly form with durable tokens.
+ *
+ * The goal is to replace Confluence-specific XML tags (`<ac:*>`, `<ri:*>`,
+ * structured-macros, inline comment markers, etc.) with plain-text
+ * `MD_*` tokens or regular HTML so that:
+ *
+ *   1. `linkedom` can parse the body without choking on unknown namespaces.
+ *   2. Turndown won't mangle/escape the embedded structured information.
+ *
+ * The tokens are later decoded back into markdown by `decodeMdCommentTokens`.
+ */
+
+import { decodeBasicEntities } from "./html-utils.js";
+
+export function normalizeMacros(html: string): string {
+  let out = html;
+
+  // Inline Status macro → durable token with color/title.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']status["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, inner) => {
+      const titleParam = inner.match(
+        /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+      );
+      const colourParam = inner.match(
+        /<ac:parameter[^>]*\bac:name=["'](?:colour|color)["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+      );
+      const title = (titleParam?.[1] || "").replace(/<[^>]+>/g, "").trim();
+      const color = (colourParam?.[1] || "")
+        .replace(/<[^>]+>/g, "")
+        .trim()
+        .toLowerCase();
+      return `MD_STATUS(${encodeURIComponent(color)})[${encodeURIComponent(title)}]`;
+    },
+  );
+
+  /**
+   * Convert Confluence `<ac:link>` elements to tokens or markdown.
+   *
+   * Why: Confluence uses `<ac:link>` for various link types: user mentions,
+   * page links, attachment links, and external URLs. We preserve them during
+   * markdown conversion and restore them on upload.
+   */
+  out = out.replace(/<ac:link\b[^>]*>([\s\S]*?)<\/ac:link>/gi, (m, inner) =>
+    convertAcLink(m, String(inner || "")),
+  );
+
+  // Info / Note / Warning / Tip / Panel macros → MD_PANEL token with color/icon
+  // and body.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["'](info|note|warning|tip|success|error|panel)["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, name: string, inner: string) => {
+      const macro = String(name || "").toLowerCase();
+      const body =
+        inner.match(
+          /<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
+        )?.[1] || "";
+      let color = macro;
+      let icon = macro;
+      if (macro === "panel") {
+        const bg =
+          inner.match(
+            /<ac:parameter[^>]*\bac:name=["']bgColor["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+          )?.[1] || "";
+        color = bg.replace(/<[^>]+>/g, "").trim() || "panel";
+        icon = "panel";
+      }
+      return `MD_PANEL(${encodeURIComponent(color)},${encodeURIComponent(icon)})[${encodeURIComponent(body)}]`;
+    },
+  );
+
+  // Legacy mermaid: comment with base64 source + mermaid.ink image → fenced
+  // block token.
+  out = out.replace(
+    /<!--\s*mermaid:([A-Za-z0-9+/=]+)\s*-->\s*<ac:image\b[^>]*>[\s\S]*?<\/ac:image>/gi,
+    (_m, encoded) => `MD_MERMAID(${encoded})`,
+  );
+  // New mermaid: expand macro with "Mermaid" in title → extract source as
+  // MD_MERMAID token.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']expand["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (fullMatch, inner) => {
+      const title = (
+        inner.match(
+          /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim();
+      if (!/mermaid/i.test(title)) {
+        return fullMatch;
+      }
+      const codeBodyMatch = inner.match(
+        /<ac:plain-text-body[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
+      );
+      let code = codeBodyMatch?.[1] || "";
+      const cdata = code.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+      if (cdata) {
+        code = cdata[1] || "";
+      } else {
+        code = decodeBasicEntities(code);
+      }
+      return `MD_MERMAID(${Buffer.from(code).toString("base64")})`;
+    },
+  );
+  // Suppress orphaned mermaid.ink images (source already captured above).
+  out = out.replace(
+    /<ac:image\b[^>]*>[\s\S]*?mermaid\.ink[\s\S]*?<\/ac:image>/gi,
+    "",
+  );
+
+  // Images with optional captions → durable token preserving URL/filename and
+  // caption.
+  out = out.replace(
+    /<ac:image\b[^>]*>([\s\S]*?)<\/ac:image>/gi,
+    (original, inner) => {
+      const innerStr = String(inner || "");
+      const url =
+        innerStr.match(/<ri:url[^>]*\bri:value=["']([^"']+)["'][^>]*>/i)?.[1] ||
+        "";
+      const filename =
+        innerStr.match(
+          /<ri:attachment[^>]*\bri:filename=["']([^"']+)["'][^>]*>/i,
+        )?.[1] || "";
+      const capInner =
+        innerStr.match(/<ac:caption[^>]*>([\s\S]*?)<\/ac:caption>/i)?.[1] || "";
+      const caption = capInner.replace(/<[^>]+>/g, "").trim();
+      const ref = url || (filename ? `attach:${filename}` : "");
+      if (!ref) {
+        return original; // leave unchanged if no recognizable ref
+      }
+      return `MD_IMAGE(${encodeURIComponent(ref)})[${encodeURIComponent(caption)}]`;
+    },
+  );
+
+  // Convert Confluence code macro to a durable MD_CODE token so we can emit
+  // fenced code blocks later in markdown. We encode language and body to
+  // avoid HTML entity / DOM parsing side effects.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']code["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, inner) => {
+      const langParam = inner.match(
+        /<ac:parameter[^>]*\bac:name=["']language["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+      );
+      const lang = (langParam?.[1] || "").replace(/<[^>]+>/g, "").trim();
+      const bodyMatch = inner.match(
+        /<ac:plain-text-body[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
+      );
+      let body = bodyMatch?.[1] || "";
+      const cdata = body.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+      if (cdata) {
+        body = cdata[1] || "";
+      } else {
+        body = decodeBasicEntities(body);
+      }
+      return `MD_CODE(${encodeURIComponent(lang)})[${encodeURIComponent(body)}]`;
+    },
+  );
+
+  // TOC macro → durable token so position is preserved through turndown.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi,
+    () => "MD_WIDGET(toc)",
+  );
+  // Also handle self-closing TOC macro tags (e.g. `<ac:structured-macro ac:name="toc" />`).
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*\/>/gi,
+    () => "MD_WIDGET(toc)",
+  );
+
+  // Inline comment markers → durable tokens preserving the ref id. Handle both
+  // structured-macro and inline element forms.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']inline-comment-marker["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, inner) => {
+      const innerStr = String(inner || "");
+      const ref = (
+        innerStr.match(
+          /<ac:parameter[^>]*\bac:name=["']ref["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim();
+      const endParam = (
+        innerStr.match(
+          /<ac:parameter[^>]*\bac:name=["'](?:end|isEnd|endMarker|type)["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim()
+        .toLowerCase();
+      const isEnd =
+        endParam === "true" || endParam === "1" || endParam === "end";
+      const enc = encodeURIComponent(ref);
+      return isEnd ? `MD_CMT_END(${enc})` : `MD_CMT_START(${enc})`;
+    },
+  );
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']inline-comment-end["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, inner) => {
+      const ref = (
+        String(inner || "").match(
+          /<ac:parameter[^>]*\bac:name=["']ref["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim();
+      return `MD_CMT_END(${encodeURIComponent(ref)})`;
+    },
+  );
+  // Paired inline form: `<ac:inline-comment-marker ac:ref="...">TEXT</...>`.
+  out = out.replace(
+    /<ac:inline-comment-marker[^>]*\bac:ref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/ac:inline-comment-marker>/gi,
+    (_m, ref, inner) => {
+      const enc = encodeURIComponent(String(ref || ""));
+      return `MD_CMT_START(${enc})${inner}MD_CMT_END(${enc})`;
+    },
+  );
+  // Self-closing / opening forms.
+  out = out.replace(
+    /<ac:inline-comment-marker[^>]*\bac:ref=["']([^"']+)["'][^>]*\/?>(?:<\/ac:inline-comment-marker>)?/gi,
+    (m, ref) => {
+      const isEnd =
+        /\bac:(?:is-)?end=["']?(?:true|1)["']?/i.test(m) ||
+        /\bac:type=["']end["']/i.test(m);
+      const enc = encodeURIComponent(String(ref || ""));
+      return isEnd ? `MD_CMT_END(${enc})` : `MD_CMT_START(${enc})`;
+    },
+  );
+  out = out.replace(
+    /<ac:inline-comment-end[^>]*\bac:ref=["']([^"']+)["'][^>]*\/?>(?:<\/ac:inline-comment-end>)?/gi,
+    (_m, ref) => `MD_CMT_END(${encodeURIComponent(String(ref || ""))})`,
+  );
+
+  // Inline user mentions via `<ac:atlassian-user ac:account-id="..."/>`,
+  // processed before the generic ac:* stripping below.
+  out = out.replace(/<ac:atlassian-user\b[^>]*>/gi, (m) => {
+    const acc = m.match(/ac:account-id=["']([^"']+)["']/i)?.[1] || "";
+    return `MD_MENTION(${encodeURIComponent(acc)})[]`;
+  });
+
+  // Unwrap any remaining Confluence ac:* tags by dropping wrappers while
+  // keeping inner content.
+  out = out.replace(/<ac:[^>]+>/gi, "");
+  out = out.replace(/<\/ac:[^>]+>/gi, "");
+
+  // For other macros, unwrap the rich-text-body so inner content is preserved.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, inner) => {
+      const body = inner.match(
+        /<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
+      );
+      return body ? body[1] : inner;
+    },
+  );
+
+  // Encode HTML comments as inline tokens so textContent retains them through
+  // DOM parsing.
+  out = out.replace(
+    /<!--\s*([\s\S]*?)\s*-->/g,
+    (_m, inner) => `MD_COMMENT(${encodeURIComponent(String(inner))})`,
+  );
+  return out;
+}
+
+/**
+ * Convert a single `<ac:link>` element into a durable token (or leave
+ * untouched if the link type is unknown).
+ */
+function convertAcLink(original: string, innerStr: string): string {
+  // User mentions → durable token
+  if (/<ri:user[^>]*>/i.test(innerStr)) {
+    const acc =
+      innerStr.match(/ri:account-id=["']([^"']+)["']/i)?.[1] ||
+      innerStr.match(/ri:userkey=["']([^"']+)["']/i)?.[1] ||
+      innerStr.match(/ri:username=["']([^"']+)["']/i)?.[1] ||
+      "";
+    const visible = innerStr.replace(/<[^>]+>/g, "").trim();
+    return `MD_MENTION(${encodeURIComponent(acc)})[${encodeURIComponent(visible)}]`;
+  }
+
+  // Content entity links (by page ID) → token
+  if (/<ri:content-entity[^>]*>/i.test(innerStr)) {
+    const contentId =
+      innerStr.match(/ri:content-id=["']([^"']+)["']/i)?.[1] || "";
+    const linkText = extractLinkBody(innerStr) || contentId;
+    const pageRef = `pageid:${contentId}`;
+    return `MD_PAGE_LINK~~${encodeURIComponent(pageRef)}~~${encodeURIComponent(linkText)}~~END`;
+  }
+
+  // Page links by title → token
+  if (/<ri:page[^>]*>/i.test(innerStr)) {
+    const contentTitle =
+      innerStr.match(/ri:content-title=["']([^"']+)["']/i)?.[1] || "";
+    const spaceKey =
+      innerStr.match(/ri:space-key=["']([^"']+)["']/i)?.[1] || "";
+    const linkText = extractLinkBody(innerStr) || contentTitle;
+    const pageRef = spaceKey
+      ? `page:${spaceKey}:${contentTitle}`
+      : `page:${contentTitle}`;
+    return `MD_PAGE_LINK~~${encodeURIComponent(pageRef)}~~${encodeURIComponent(linkText)}~~END`;
+  }
+
+  // Attachment links → token
+  if (/<ri:attachment[^>]*>/i.test(innerStr)) {
+    const filename =
+      innerStr.match(/ri:filename=["']([^"']+)["']/i)?.[1] || "";
+    const linkText = extractLinkBody(innerStr) || filename;
+    return `MD_ATTACH_LINK~~${encodeURIComponent(filename)}~~${encodeURIComponent(linkText)}~~END`;
+  }
+
+  // URL links → token
+  if (/<ri:url[^>]*>/i.test(innerStr)) {
+    const url = innerStr.match(/ri:value=["']([^"']+)["']/i)?.[1] || "";
+    const linkText = extractLinkBody(innerStr) || url;
+    return `MD_URL_LINK~~${encodeURIComponent(url)}~~${encodeURIComponent(linkText)}~~END`;
+  }
+
+  return original;
+}
+
+function extractLinkBody(innerStr: string): string {
+  const linkBodyMatch =
+    innerStr.match(
+      /<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i,
+    ) || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+  return (linkBodyMatch?.[1] || "").replace(/<[^>]+>/g, "").trim();
+}
