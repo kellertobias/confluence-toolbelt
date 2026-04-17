@@ -1,3 +1,7 @@
+## 1.9.0 (2026-04-17)
+
+* feat(markdown): add requirement list support for upload and download ([cdf7c83](https://github.com/kellertobias/confluence-toolbelt/commit/cdf7c83))
+
 ## 1.8.0 (2026-04-16)
 
 * fix: improve nested markdown list detection with blank lines ([4cbb40d](https://github.com/kellertobias/confluence-toolbelt/commit/4cbb40d))
