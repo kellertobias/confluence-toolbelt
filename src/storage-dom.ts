@@ -201,6 +201,16 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
       // If this is a table block (or contains a table), render as GFM
       const tag = String((el as any).tagName || "").toLowerCase();
       if (tag === "table") {
+        const isReqTable = el.getAttribute
+          ? el.getAttribute("data-req-table") === "true"
+          : false;
+        if (isReqTable) {
+          const md = renderReqListMarkdown(el);
+          if (md.trim()) {
+            blocks.push({ nodeId, markdown: md.trim() });
+          }
+          continue;
+        }
         const md = renderTableMarkdown(el);
         if (md.trim()) {
           blocks.push({ nodeId, markdown: md.trim() });
@@ -211,6 +221,16 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
         ? (el as any).querySelector("table")
         : null;
       if (tableDesc) {
+        const isReqTableDesc = (tableDesc as any).getAttribute
+          ? (tableDesc as any).getAttribute("data-req-table") === "true"
+          : false;
+        if (isReqTableDesc) {
+          const md = renderReqListMarkdown(tableDesc as Element);
+          if (md.trim()) {
+            blocks.push({ nodeId, markdown: md.trim() });
+          }
+          continue;
+        }
         const md = renderTableMarkdown(tableDesc as Element);
         if (md.trim()) {
           blocks.push({ nodeId, markdown: md.trim() });
@@ -612,6 +632,16 @@ export function markdownToStorageHtml(md: string): string {
       continue;
     }
 
+    // Requirement lists: consecutive - REQ(ID, VERB) or - nREQ(ID, VERB) items → table
+    if (/^\s*[-*]\s+n?REQ\s*\(/.test(line)) {
+      const reqResult = consumeReqList(lines, i);
+      if (reqResult) {
+        out.push(reqResult.html);
+        i = reqResult.nextIndex;
+        continue;
+      }
+    }
+
     // Unordered lists (- or *). Parse minimal structure and emit <ul><li>...
     if (/^\s*[-*]\s+/.test(line)) {
       const { html, nextIndex } = consumeList(lines, i, "unordered");
@@ -836,6 +866,83 @@ function consumeTable(
   return { html: parts.join(""), nextIndex: i };
 }
 
+const REQ_LINE_RE = /^\s*[-*]\s+(n?REQ)\s*\(([^,]+),\s*([^)]+)\):\s*(.+)$/;
+const REQ_VERB_TOKEN = "MDREQVERBTOK";
+
+/**
+ * Consume consecutive REQ/nREQ bullet items and emit a Confluence table.
+ *
+ * Markdown input:
+ *   - REQ(F1, MUST): The system MUST support auth.
+ *   - nREQ(F2, SHOULD): SSO SHOULD be supported.
+ *
+ * Produces a <table data-req-table="true"> with the verb highlighted in red
+ * and nREQ rows wrapped in strikethrough.
+ */
+function consumeReqList(
+  lines: string[],
+  start: number,
+): { html: string; nextIndex: number } | null {
+  const items: { neg: boolean; id: string; verb: string; desc: string }[] = [];
+  let i = start;
+
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    if (/^\s*$/.test(line)) {
+      i++;
+      continue;
+    }
+    const match = line.match(REQ_LINE_RE);
+    if (!match) break;
+    items.push({
+      neg: match[1] === "nREQ",
+      id: (match[2] || "").trim(),
+      verb: (match[3] || "").trim(),
+      desc: (match[4] || "").trim(),
+    });
+    i++;
+  }
+
+  if (items.length === 0) return null;
+
+  const parts: string[] = [];
+  parts.push('<table data-req-table="true">');
+  parts.push(
+    '<colgroup><col style="width: 100px;" /><col style="width: 500px;" /></colgroup>',
+  );
+  parts.push(
+    "<thead><tr><th><p>ID</p></th><th><p>Requirement</p></th></tr></thead>",
+  );
+  parts.push("<tbody>");
+
+  for (const item of items) {
+    const verbHighlight = `<strong style="color: #ff0000;">${escapeHtml(item.verb)}</strong>`;
+    const verbRegex = new RegExp(
+      `\\b${escapeRegExp(item.verb)}\\b`,
+    );
+    const descTokenized = item.desc.replace(verbRegex, REQ_VERB_TOKEN);
+    let descHtml = inlineHtml(descTokenized);
+    descHtml = descHtml.replace(REQ_VERB_TOKEN, verbHighlight);
+
+    if (item.neg) {
+      parts.push(
+        `<tr><td><p><s>${escapeHtml(item.id)}</s></p></td><td><p><s>${descHtml}</s></p></td></tr>`,
+      );
+    } else {
+      parts.push(
+        `<tr><td><p>${escapeHtml(item.id)}</p></td><td><p>${descHtml}</p></td></tr>`,
+      );
+    }
+  }
+
+  parts.push("</tbody></table>");
+  return { html: parts.join(""), nextIndex: i };
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function splitRow(row: string): string[] {
   // Remove leading/trailing pipe and split
   const trimmed = row.trim().replace(/^\|/, "").replace(/\|$/, "");
@@ -1049,26 +1156,29 @@ function inlineHtml(s: string): string {
     // Page links by ID: [text](pageid:12345) — cross-space, rename-proof
     if (hrefStr.startsWith("pageid:")) {
       const contentId = hrefStr.slice(7);
-      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+      const plainText = decodeBasicEntities(String(text));
+      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }
 
     // Page links by title: [text](page:PageTitle) or [text](page:SPACE:PageTitle)
     if (hrefStr.startsWith("page:")) {
       const pageRef = hrefStr.slice(5);
       const parts = pageRef.split(":");
+      const plainText = decodeBasicEntities(String(text));
       if (parts.length >= 2 && parts[0]) {
         const spaceKey = parts[0];
         const contentTitle = parts.slice(1).join(":");
-        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(contentTitle)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(contentTitle)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
       } else {
-        return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+        return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
       }
     }
 
     // Attachment links: [text](#attachment:filename.pdf)
     if (hrefStr.startsWith("#attachment:")) {
       const filename = hrefStr.slice(12); // Remove "#attachment:" prefix
-      return `<ac:link><ri:attachment ri:filename="${escapeHtml(filename)}"/><ac:plain-text-link-body><![CDATA[${text}]]></ac:plain-text-link-body></ac:link>`;
+      const plainText = decodeBasicEntities(String(text));
+      return `<ac:link><ri:attachment ri:filename="${escapeHtml(filename)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }
 
     // Regular links: [text](url)
@@ -1567,6 +1677,60 @@ const TABLE_WIDTH_PX: Record<string, number> = {
   wider: 960,
   full: 1800,
 };
+
+/**
+ * Convert a data-req-table back to a markdown bullet list of REQ/nREQ items.
+ *
+ * Expects a table with header [ID | Requirement] and body rows where:
+ * - The verb is inside a <strong> with an inline color style
+ * - Struck-through rows (<s>/<del>) produce nREQ
+ */
+function renderReqListMarkdown(tableEl: Element): string {
+  const rows = Array.from(tableEl.querySelectorAll("tr")) as Element[];
+  const lines: string[] = [];
+
+  for (const row of rows) {
+    const cells = Array.from(
+      (row as any).querySelectorAll("td"),
+    ) as Element[];
+    if (cells.length < 2) continue;
+
+    const idCell = cells[0] as any;
+    const descCell = cells[1] as any;
+
+    const idHtml = String(idCell.innerHTML || "");
+    const descHtml = String(descCell.innerHTML || "");
+
+    const strippedId = idHtml.replace(/<!--[\s\S]*?-->/g, "").trim();
+    const isStruck =
+      /<s\b|<del\b/i.test(strippedId) ||
+      /<s\b|<del\b/i.test(
+        descHtml.replace(/<!--[\s\S]*?-->/g, "").trim(),
+      );
+
+    const id = decodeBasicEntities(idHtml.replace(/<[^>]+>/g, "").trim());
+
+    const verbMatch = descHtml.match(
+      /<strong[^>]*\bstyle="[^"]*\bcolor\s*:[^"]*"[^>]*>([^<]+)<\/strong>/i,
+    );
+    const verb = (verbMatch?.[1] || "").trim();
+
+    const desc = decodeBasicEntities(
+      descHtml.replace(/<[^>]+>/g, "").trim(),
+    );
+
+    if (!id && !desc) continue;
+
+    const prefix = isStruck ? "nREQ" : "REQ";
+    if (verb) {
+      lines.push(`- ${prefix}(${id}, ${verb}): ${desc}`);
+    } else {
+      lines.push(`- ${prefix}(${id}): ${desc}`);
+    }
+  }
+
+  return lines.join("\n");
+}
 
 function renderTableMarkdown(tableEl: Element): string {
   // Extract table width: prefer data-table-width (pixel), fall back to legacy data-layout

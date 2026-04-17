@@ -215,6 +215,26 @@ Cell background colors can be preserved with inline comments:
 | Needs Work | See below <!-- cell:bg:red -->  |
 ```
 
+### Requirement Lists
+
+Bullet lists using `REQ(ID, VERB)` syntax are automatically converted to a styled Confluence table on upload, and converted back to a bullet list on download.
+
+```markdown
+- REQ(F1, MUST): The orchestrator MUST provide a flexible API for data fetching.
+- REQ(F2, MUST): The orchestrator MUST support query aggregation from multiple services.
+- REQ(F3, SHOULD): The orchestrator SHOULD implement caching mechanisms.
+- nREQ(F4, MAY): The system MAY support batch processing. (rejected)
+```
+
+On **upload**, this becomes a two-column Confluence table (ID | Requirement) where:
+- The VERB keyword (e.g. MUST, SHOULD) is highlighted in **red bold** in the description text
+- `nREQ(...)` items are rendered with the entire row struck through
+- The table carries a `data-req-table` marker so it round-trips cleanly
+
+On **download**, the tool detects the marker and converts the table back to the original bullet list format. Struck-through rows become `nREQ(...)` items.
+
+To reject a requirement, change `REQ(` to `nREQ(` (or vice versa to un-reject). Each item must be a single line starting with `- REQ(ID, VERB): description` or `- nREQ(ID, VERB): description`.
+
 ### Table Width and Column Configuration
 
 You can control the overall table width and individual column proportions by placing a `<!-- table:LAYOUT [SHARES] -->` comment directly before the table:
