@@ -893,7 +893,9 @@ function consumeReqList(
       continue;
     }
     const match = line.match(REQ_LINE_RE);
-    if (!match) break;
+    if (!match) {
+      break;
+    }
     items.push({
       neg: match[1] === "nREQ",
       id: (match[2] || "").trim(),
@@ -903,7 +905,9 @@ function consumeReqList(
     i++;
   }
 
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    return null;
+  }
 
   const parts: string[] = [];
   parts.push('<table data-req-table="true">');
@@ -917,9 +921,7 @@ function consumeReqList(
 
   for (const item of items) {
     const verbHighlight = `<strong style="color: #ff0000;">${escapeHtml(item.verb)}</strong>`;
-    const verbRegex = new RegExp(
-      `\\b${escapeRegExp(item.verb)}\\b`,
-    );
+    const verbRegex = new RegExp(`\\b${escapeRegExp(item.verb)}\\b`);
     const descTokenized = item.desc.replace(verbRegex, REQ_VERB_TOKEN);
     let descHtml = inlineHtml(descTokenized);
     descHtml = descHtml.replace(REQ_VERB_TOKEN, verbHighlight);
@@ -1065,12 +1067,11 @@ function consumeListAtIndent(
         ? ("ordered" as const)
         : ("unordered" as const);
       const sub = consumeListAtIndent(lines, i, subKind, currentIndent);
-      if (items.length > 0 && !!items[items.length - 1]) {
+      const lastIdx = items.length - 1;
+      const last = items[lastIdx];
+      if (last) {
         // Attach sub-list inside the last <li>
-        items[items.length - 1] = items[items.length - 1]!.replace(
-          /<\/li>$/,
-          `${sub.html}</li>`,
-        );
+        items[lastIdx] = last.replace(/<\/li>$/, `${sub.html}</li>`);
       } else {
         items.push(`<li>${sub.html}</li>`);
       }
@@ -1636,8 +1637,7 @@ function normalizeMacros(html: string): string {
   );
   // Handle <ac:atlassian-user ac:account-id="..."/> inline user mentions before generic tag stripping
   out = out.replace(/<ac:atlassian-user\b[^>]*>/gi, (m) => {
-    const acc =
-      m.match(/ac:account-id=["']([^"']+)["']/i)?.[1] || "";
+    const acc = m.match(/ac:account-id=["']([^"']+)["']/i)?.[1] || "";
     const encId = encodeURIComponent(acc);
     return `MD_MENTION(${encId})[]`;
   });
@@ -1690,10 +1690,10 @@ function renderReqListMarkdown(tableEl: Element): string {
   const lines: string[] = [];
 
   for (const row of rows) {
-    const cells = Array.from(
-      (row as any).querySelectorAll("td"),
-    ) as Element[];
-    if (cells.length < 2) continue;
+    const cells = Array.from((row as any).querySelectorAll("td")) as Element[];
+    if (cells.length < 2) {
+      continue;
+    }
 
     const idCell = cells[0] as any;
     const descCell = cells[1] as any;
@@ -1704,9 +1704,7 @@ function renderReqListMarkdown(tableEl: Element): string {
     const strippedId = idHtml.replace(/<!--[\s\S]*?-->/g, "").trim();
     const isStruck =
       /<s\b|<del\b/i.test(strippedId) ||
-      /<s\b|<del\b/i.test(
-        descHtml.replace(/<!--[\s\S]*?-->/g, "").trim(),
-      );
+      /<s\b|<del\b/i.test(descHtml.replace(/<!--[\s\S]*?-->/g, "").trim());
 
     const id = decodeBasicEntities(idHtml.replace(/<[^>]+>/g, "").trim());
 
@@ -1715,11 +1713,11 @@ function renderReqListMarkdown(tableEl: Element): string {
     );
     const verb = (verbMatch?.[1] || "").trim();
 
-    const desc = decodeBasicEntities(
-      descHtml.replace(/<[^>]+>/g, "").trim(),
-    );
+    const desc = decodeBasicEntities(descHtml.replace(/<[^>]+>/g, "").trim());
 
-    if (!id && !desc) continue;
+    if (!id && !desc) {
+      continue;
+    }
 
     const prefix = isStruck ? "nREQ" : "REQ";
     if (verb) {
