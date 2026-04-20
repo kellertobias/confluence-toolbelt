@@ -177,6 +177,35 @@ describe('storageToMarkdownBlocks', () => {
     expect(html).toContain('<p>Body.</p>');
   });
 
+  it('renders *text* as <em> italics', () => {
+    const html = markdownToStorageHtml('*Rejected.*');
+    expect(html).toContain('<p><em>Rejected.</em></p>');
+  });
+
+  it('renders italics that wrap a link', () => {
+    const md =
+      '*→ Full discussion, alternatives: [TDD Discussion](pageid:6273368135)*';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<em>→ Full discussion, alternatives: ');
+    expect(html).toContain('<ri:content-entity ri:content-id="6273368135"/>');
+    expect(html).toContain('</ac:link></em>');
+  });
+
+  it('does not italicize asterisks around whitespace or inside code spans', () => {
+    const html = markdownToStorageHtml(
+      'Use `a*b` for multiplication, 5 * 3 = 15, and *italic* text.',
+    );
+    expect(html).toContain('<code>a*b</code>');
+    expect(html).toContain('5 * 3 = 15');
+    expect(html).toContain('<em>italic</em>');
+  });
+
+  it('keeps escaped asterisks literal and does not italicize them', () => {
+    const html = markdownToStorageHtml('\\*not italic\\*');
+    expect(html).toContain('<p>*not italic*</p>');
+    expect(html).not.toContain('<em>');
+  });
+
   it('does not treat indented list items as code blocks on upload', () => {
     const md = [
       '- Parent item',

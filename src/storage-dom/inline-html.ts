@@ -29,13 +29,38 @@ export function inlineHtml(s: string): string {
     return `<ac:image ac:width="500" ac:align="center">${widthParam}${alignParam}${body}${capHtml}</ac:image>`;
   });
 
-  // Code spans
-  out = out.replace(/`([^`]+)`/g, (_m, inner) => `<code>${inner}</code>`);
+  // Code spans — stash contents behind placeholders so stray `*` inside code
+  // can't be picked up by the bold/italic regexes below.
+  const codeSpans: string[] = [];
+  out = out.replace(/`([^`]+)`/g, (_m, inner) => {
+    const idx = codeSpans.push(String(inner)) - 1;
+    return `MD_CODE_SPAN_${idx}_END`;
+  });
 
   // Bold
   out = out.replace(
     /\*\*([^*]+)\*\*/g,
     (_m, inner) => `<strong>${inner}</strong>`,
+  );
+
+  /**
+   * Italic via single asterisks.
+   *
+   * Rules (pragmatic subset of CommonMark, enough to cover real-world notes):
+   * - The opening `*` must not be immediately followed by whitespace.
+   * - The closing `*` must not be immediately preceded by whitespace.
+   * - The span may not cross a newline.
+   * - The inner text may not contain another `*` (so bold has already been
+   *   handled above and can't be eaten again here).
+   *
+   * This is deliberately placed before link conversion: that way a link
+   * wrapped entirely in italics (e.g. `*see [text](pageid:...)*`) is first
+   * wrapped in `<em>`, and the link regex then replaces the `[text](...)`
+   * inside the `<em>` to produce `<em>see <ac:link>...</ac:link></em>`.
+   */
+  out = out.replace(
+    /\*(?!\s)([^*\n]+?)(?<!\s)\*/g,
+    (_m, inner) => `<em>${inner}</em>`,
   );
 
   /**
@@ -78,6 +103,12 @@ export function inlineHtml(s: string): string {
 
     return `<a href="${escapeHtml(hrefStr)}">${text}</a>`;
   });
+
+  // Restore code spans that were stashed before bold/italic processing.
+  out = out.replace(
+    /MD_CODE_SPAN_(\d+)_END/g,
+    (_m, idx) => `<code>${codeSpans[Number(idx)] || ""}</code>`,
+  );
 
   // Restore literal asterisks
   out = out.replace(/MD_ESC_STAR/g, "*");
