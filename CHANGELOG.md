@@ -1,3 +1,8 @@
+## <small>1.10.1 (2026-04-17)</small>
+
+* fix(storage-dom): refactor storage-dom into modular structure ([6ad16ba](https://github.com/kellertobias/confluence-toolbelt/commit/6ad16ba))
+* chore: improve code readability with minor formatting changes ([315ac36](https://github.com/kellertobias/confluence-toolbelt/commit/315ac36))
+
 ## 1.10.0 (2026-04-17)
 
 * feat(confluence): add page creation commands for siblings and children ([bfea420](https://github.com/kellertobias/confluence-toolbelt/commit/bfea420))
