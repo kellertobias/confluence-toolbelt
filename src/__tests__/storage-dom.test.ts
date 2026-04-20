@@ -1083,6 +1083,138 @@ describe('nREQ rejected requirement rows', () => {
   });
 });
 
+describe('definition lists (deflist)', () => {
+  it('uploads a deflist comment + bullet items as a Confluence table', () => {
+    const md = [
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+      '- ROLE(Owner/Writer): Tobias S. Keller',
+      '- ROLE(Technical Reviewer): ',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain(
+      '<table data-deflist="true" data-deflist-keyword="ROLE" data-deflist-columns="Role,Name">',
+    );
+    expect(html).toContain('<col style="width: 200px;"');
+    expect(html).toContain('<col style="width: 500px;"');
+    expect(html).toContain('<th><p>Role</p></th>');
+    expect(html).toContain('<th><p>Name</p></th>');
+    expect(html).toContain('<td><p>Owner/Writer</p></td>');
+    expect(html).toContain('<td><p>Tobias S. Keller</p></td>');
+    expect(html).toContain('<td><p>Technical Reviewer</p></td><td></td>');
+  });
+
+  it('supports multi-line values via indented continuation lines', () => {
+    const md = [
+      '<!-- deflist keyword="TERM" columns=Term,Definition -->',
+      '- TERM(Facade): A design pattern serving as a front-facing interface',
+      '  masking more complex underlying code.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-deflist="true"');
+    expect(html).toContain('<td><p>Facade</p></td>');
+    expect(html).toContain('front-facing interface<br/>masking more complex');
+  });
+
+  it('downloads a deflist table back to comment + bullet list', () => {
+    const html = `
+      <table data-deflist="true" data-deflist-keyword="ROLE" data-deflist-columns="Role,Name">
+        <colgroup><col style="width: 200px;" /><col style="width: 500px;" /></colgroup>
+        <thead><tr><th><p>Role</p></th><th><p>Name</p></th></tr></thead>
+        <tbody>
+          <tr><td><p>Owner/Writer</p></td><td><p>Tobias S. Keller</p></td></tr>
+          <tr><td><p>Technical Reviewer</p></td><td></td></tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain(
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+    );
+    expect(md).toContain('- ROLE(Owner/Writer): Tobias S. Keller');
+    expect(md).toContain('- ROLE(Technical Reviewer):');
+    // No trailing space after the colon when the value is empty.
+    expect(md).not.toMatch(/ROLE\(Technical Reviewer\): \n/);
+  });
+
+  it('preserves multi-line values through download', () => {
+    const html = `
+      <table data-deflist="true" data-deflist-keyword="TERM" data-deflist-columns="Term,Definition">
+        <tbody>
+          <tr>
+            <td><p>Facade</p></td>
+            <td><p>A design pattern serving as a front-facing interface<br/>masking more complex underlying code.</p></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain(
+      '<!-- deflist keyword="TERM" columns=Term,Definition -->',
+    );
+    expect(md).toContain(
+      '- TERM(Facade): A design pattern serving as a front-facing interface',
+    );
+    expect(md).toContain('  masking more complex underlying code.');
+  });
+
+  it('round-trips a deflist through storage HTML without data loss', () => {
+    const original = [
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+      '- ROLE(Owner/Writer): Tobias S. Keller',
+      '- ROLE(Product Manager):',
+      '- ROLE(Technical Reviewer):',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    const md = storageToMarkdownBlocks(`<div>${html}</div>`)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain(
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+    );
+    expect(md).toContain('- ROLE(Owner/Writer): Tobias S. Keller');
+    expect(md).toContain('- ROLE(Product Manager):');
+    expect(md).toContain('- ROLE(Technical Reviewer):');
+  });
+
+  it('supports quoted column names containing spaces', () => {
+    const md = [
+      '<!-- deflist keyword="FIELD" columns="Field Name,Value" -->',
+      '- FIELD(Project): Confluence Tools',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-deflist-columns="Field Name,Value"');
+    expect(html).toContain('<th><p>Field Name</p></th>');
+    expect(html).toContain('<th><p>Value</p></th>');
+  });
+
+  it('falls back to a bullet list when the deflist comment lacks a keyword', () => {
+    const md = [
+      '<!-- deflist columns=A,B -->',
+      '- NOTE(x): y',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // Without a keyword, the comment is ignored and the bullet is rendered
+    // as a normal list item. The custom table marker must not appear.
+    expect(html).not.toContain('data-deflist');
+  });
+
+  it('does not swallow unrelated content after a deflist block', () => {
+    const md = [
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+      '- ROLE(Owner): Alice',
+      '',
+      '## Next section',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-deflist="true"');
+    expect(html).toContain('<h2>Next section</h2>');
+  });
+});
+
 describe('detectUnsupportedFeatures', () => {
   it('detects multi-column layouts (section/column macros)', () => {
     const html = `

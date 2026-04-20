@@ -9,6 +9,7 @@ import { parseHTML } from "linkedom";
 import { unescapeMarkdownUnderscores } from "./markdown-escapes.js";
 import { normalizeMacros } from "./normalize-macros.js";
 import {
+  renderDefListMarkdown,
   renderReqListMarkdown,
   renderTableMarkdown,
   replaceTableTokens,
@@ -76,20 +77,16 @@ function elementToBlock(element: any): MappedNode | null {
   const nodeId = el.getAttribute?.("data-node-id") || undefined;
   const tag = String((el as any).tagName || "").toLowerCase();
 
-  // Top-level table: render as GFM (or requirement list).
+  // Top-level table: render as GFM, requirement list, or definition list.
   if (tag === "table") {
-    const md = isRequirementTable(el)
-      ? renderReqListMarkdown(el)
-      : renderTableMarkdown(el);
+    const md = renderTableVariant(el);
     return md.trim() ? { nodeId, markdown: md.trim() } : null;
   }
 
   // Element that contains a descendant table: render the inner table instead.
   const tableDesc = (el as any).querySelector?.("table") as Element | null;
   if (tableDesc) {
-    const md = isRequirementTable(tableDesc)
-      ? renderReqListMarkdown(tableDesc)
-      : renderTableMarkdown(tableDesc);
+    const md = renderTableVariant(tableDesc);
     return md.trim() ? { nodeId, markdown: md.trim() } : null;
   }
 
@@ -106,6 +103,24 @@ function elementToBlock(element: any): MappedNode | null {
 
 function isRequirementTable(el: Element): boolean {
   return (el as any).getAttribute?.("data-req-table") === "true";
+}
+
+function isDefinitionListTable(el: Element): boolean {
+  return (el as any).getAttribute?.("data-deflist") === "true";
+}
+
+/**
+ * Dispatch a table element to the appropriate markdown renderer based on the
+ * data attributes the upload path adds to each variant.
+ */
+function renderTableVariant(el: Element): string {
+  if (isDefinitionListTable(el)) {
+    return renderDefListMarkdown(el);
+  }
+  if (isRequirementTable(el)) {
+    return renderReqListMarkdown(el);
+  }
+  return renderTableMarkdown(el);
 }
 
 /**

@@ -261,6 +261,34 @@ On **download**, the tool detects the marker and converts the table back to the 
 
 To reject a requirement, change `REQ(` to `nREQ(` (or vice versa to un-reject). Each item must be a single line starting with `- REQ(ID, VERB): description` or `- nREQ(ID, VERB): description`.
 
+### Definition Lists
+
+Two-column tables that map a short key to a longer description (glossaries, role lists, field references, etc.) can be written as a bullet list with a `<!-- deflist ... -->` preamble. On upload, the list is rendered as a styled Confluence table and carries enough metadata to round-trip cleanly on download.
+
+```markdown
+<!-- deflist keyword="ROLE" columns=Role,Name -->
+- ROLE(Owner/Writer): Tobias S. Keller
+- ROLE(Product Manager):
+- ROLE(Technical Reviewer):
+
+<!-- deflist keyword="TERM" columns=Term,Definition -->
+- TERM(Facade): A design pattern serving as a front-facing interface
+  masking more complex underlying code.
+- TERM(Adapter): A wrapper that converts one interface to another.
+```
+
+The `keyword` attribute selects which bullet items belong to the list (items not starting with `KEYWORD(...)` end the block). The `columns` attribute provides the table header labels. Quote the value when a label contains spaces or commas:
+
+```markdown
+<!-- deflist keyword="FIELD" columns="Field Name,Value" -->
+- FIELD(Project): Confluence Tools
+- FIELD(Owner): Tobias S. Keller
+```
+
+**Multi-line values** are supported via indented continuation lines — additional indented lines after a bullet item are merged into the same cell and rendered as `<br/>` on the Confluence page.
+
+On **upload**, the list becomes a `<table data-deflist="true" data-deflist-keyword="..." data-deflist-columns="...">` element. On **download**, the tool detects the marker and reconstructs the original comment and bullet list format.
+
 ### Table Width and Column Configuration
 
 You can control the overall table width and individual column proportions by placing a `<!-- table:LAYOUT [SHARES] -->` comment directly before the table:

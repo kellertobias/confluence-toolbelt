@@ -24,6 +24,13 @@ const REQ_LINE_RE = /^\s*[-*]\s+(n?REQ)\s*\(([^,]+),\s*([^)]+)\):\s*(.+)$/;
 const REQ_VERB_TOKEN = "MDREQVERBTOK";
 
 /**
+ * Match a `<!-- deflist keyword="NAME" columns=... -->` preamble.
+ * The attribute body is captured for separate parsing because attribute order
+ * and quoting (quoted vs. unquoted) varies in practice.
+ */
+const DEFLIST_COMMENT_RE = /^\s*<!--\s*deflist\s+(.+?)\s*-->\s*$/i;
+
+/**
  * Convert Markdown to Confluence storage HTML.
  *
  * Supports headings, paragraphs, widgets via HTML comments (e.g.
@@ -153,6 +160,27 @@ export function markdownToStorageHtml(md: string): string {
       }
     }
 
+    // Definition lists: `<!-- deflist keyword="ROLE" columns=A,B -->` followed
+    // by `- ROLE(Key): Value` bullet items (with optional indented
+    // continuation lines for multi-line values).
+    const deflistComment = line.match(DEFLIST_COMMENT_RE);
+    if (deflistComment) {
+      const attrs = parseDeflistAttributes(deflistComment[1] || "");
+      const keyword = (attrs.keyword || "").trim();
+      const columns = (attrs.columns || "")
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (keyword && columns.length >= 2) {
+        const deflist = consumeDefList(lines, i + 1, keyword, columns);
+        if (deflist) {
+          out.push(deflist.html);
+          i = deflist.nextIndex;
+          continue;
+        }
+      }
+    }
+
     // Unordered lists (- or *).
     if (/^\s*[-*]\s+/.test(line)) {
       const { html, nextIndex } = consumeList(lines, i, "unordered");
@@ -252,6 +280,9 @@ function startsNewBlock(lines: string[], i: number): boolean {
     return true;
   }
   if (/^\s*<!--\s*table:/i.test(line) && looksLikeTableHeader(lines, i + 1)) {
+    return true;
+  }
+  if (DEFLIST_COMMENT_RE.test(line)) {
     return true;
   }
   if (looksLikeTableHeader(lines, i)) {
@@ -704,6 +735,114 @@ function consumeReqList(
         `<tr><td><p>${escapeHtml(item.id)}</p></td><td><p>${descHtml}</p></td></tr>`,
       );
     }
+  }
+
+  parts.push("</tbody></table>");
+  return { html: parts.join(""), nextIndex: i };
+}
+
+// ---------------------------------------------------------------------------
+// Definition lists
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the attribute body of a `<!-- deflist ... -->` preamble into a simple
+ * key/value map.
+ *
+ * Supports both quoted (`columns="A,B"`) and unquoted (`columns=A,B`) values.
+ * Unquoted values are terminated at the next whitespace, so column names
+ * containing spaces must be quoted.
+ */
+function parseDeflistAttributes(input: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const re = /(\w+)\s*=\s*(?:"([^"]*)"|([^\s"]+))/g;
+  let m = re.exec(input);
+  while (m !== null) {
+    const key = (m[1] || "").toLowerCase();
+    const value = m[2] !== undefined ? m[2] : m[3] || "";
+    attrs[key] = value;
+    m = re.exec(input);
+  }
+  return attrs;
+}
+
+/**
+ * Consume consecutive `- KEYWORD(key): value` bullet items and emit a
+ * Confluence table that round-trips through the deflist comment.
+ *
+ * Multi-line values are supported via indented continuation lines; each
+ * additional line becomes a `<br/>` within the same cell.
+ *
+ * Produces `<table data-deflist="true" data-deflist-keyword="..."
+ * data-deflist-columns="...">` so the download path can reconstruct the
+ * original bullet list format.
+ */
+function consumeDefList(
+  lines: string[],
+  start: number,
+  keyword: string,
+  columns: string[],
+): { html: string; nextIndex: number } | null {
+  const keywordRe = new RegExp(
+    `^\\s*[-*]\\s+${escapeRegExp(keyword)}\\s*\\(([^)]*)\\):\\s*(.*)$`,
+  );
+  const items: { key: string; value: string }[] = [];
+  let i = start;
+
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    if (/^\s*$/.test(line)) {
+      i++;
+      continue;
+    }
+    const match = line.match(keywordRe);
+    if (!match) {
+      break;
+    }
+    const key = (match[1] || "").trim();
+    let value = (match[2] || "").trim();
+    i++;
+
+    // Consume indented continuation lines (e.g. multi-line definitions).
+    // A continuation is any non-blank line starting with whitespace that is
+    // not itself a new bullet list item.
+    while (i < lines.length) {
+      const next = lines[i] || "";
+      if (/^\s*$/.test(next)) {
+        break;
+      }
+      if (!/^\s+\S/.test(next) || /^\s*[-*]\s+/.test(next)) {
+        break;
+      }
+      const trimmed = next.trim();
+      value = value ? `${value}\\n${trimmed}` : trimmed;
+      i++;
+    }
+
+    items.push({ key, value });
+  }
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  const col0 = columns[0] || "Key";
+  const col1 = columns[1] || "Value";
+  const columnsAttr = columns.join(",");
+
+  const parts: string[] = [
+    `<table data-deflist="true" data-deflist-keyword="${escapeHtml(keyword)}" data-deflist-columns="${escapeHtml(columnsAttr)}">`,
+    '<colgroup><col style="width: 200px;" /><col style="width: 500px;" /></colgroup>',
+    `<thead><tr><th><p>${escapeHtml(col0)}</p></th><th><p>${escapeHtml(col1)}</p></th></tr></thead>`,
+    "<tbody>",
+  ];
+
+  for (const item of items) {
+    const keyCell = item.key
+      ? `<p>${escapeHtml(item.key)}</p>`
+      : "";
+    const valueCell = cellHtml(item.value);
+    parts.push(`<tr><td>${keyCell}</td><td>${valueCell}</td></tr>`);
   }
 
   parts.push("</tbody></table>");
