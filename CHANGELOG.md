@@ -1,3 +1,8 @@
+## <small>1.10.2 (2026-04-20)</small>
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([dafc2d3](https://github.com/kellertobias/confluence-toolbelt/commit/dafc2d3))
+* fix: italics text ([c05bf34](https://github.com/kellertobias/confluence-toolbelt/commit/c05bf34))
+
 ## <small>1.10.1 (2026-04-17)</small>
 
 * fix(storage-dom): refactor storage-dom into modular structure ([6ad16ba](https://github.com/kellertobias/confluence-toolbelt/commit/6ad16ba))
