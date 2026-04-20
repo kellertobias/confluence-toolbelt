@@ -1,3 +1,8 @@
+## 1.11.0 (2026-04-20)
+
+* Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([2724c45](https://github.com/kellertobias/confluence-toolbelt/commit/2724c45))
+* feat(markdown): add support for definition lists in markdown conversion ([23b4624](https://github.com/kellertobias/confluence-toolbelt/commit/23b4624))
+
 ## <small>1.10.2 (2026-04-20)</small>
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([dafc2d3](https://github.com/kellertobias/confluence-toolbelt/commit/dafc2d3))
