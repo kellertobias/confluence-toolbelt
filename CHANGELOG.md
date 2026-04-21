@@ -1,3 +1,7 @@
+## 1.12.0 (2026-04-21)
+
+* feat: comment text download ([427c04d](https://github.com/kellertobias/confluence-toolbelt/commit/427c04d))
+
 ## 1.11.0 (2026-04-20)
 
 * Merge branch 'main' of https://github.com/kellertobias/confluence-toolbelt ([2724c45](https://github.com/kellertobias/confluence-toolbelt/commit/2724c45))
