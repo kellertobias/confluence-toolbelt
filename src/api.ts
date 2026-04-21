@@ -151,6 +151,19 @@ export class ConfluenceClient {
     return res.json();
   }
 
+  async getPageComments(pageId: string): Promise<any[]> {
+    const url = this.buildV1(`/content/${pageId}/child/comment`, {
+      expand: 'history,version,body.view,extensions.inlineProperties',
+      limit: 100, // assuming no more than 100 comments per page for simplicity, or handle pagination
+    });
+    const res = await fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      return [];
+    }
+    const data = await res.json();
+    return data.results || [];
+  }
+
   async updatePageStorage(
     pageId: string,
     nextHtml: string,

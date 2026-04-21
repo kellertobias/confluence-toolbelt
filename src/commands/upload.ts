@@ -149,7 +149,11 @@ export async function uploadAll(opts: Options): Promise<void> {
       undefined,
       meta.status,
     );
-    const resolvedBody = resolveLocalPageLinks(body, file, opts.cwd);
+    let resolvedBody = resolveLocalPageLinks(body, file, opts.cwd);
+    
+    // Strip injected inline comment contents so they don't get uploaded as text
+    resolvedBody = resolvedBody.replace(/<!--\s*#[\s\S]*?-->/g, '');
+
     const blocks = parseBlocks(resolvedBody);
 
     if (verbose) {

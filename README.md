@@ -477,10 +477,12 @@ Use seven hyphens for a horizontal rule (separator line).
 Confluence inline comments are preserved using paired HTML comment tags:
 
 ```markdown
-This has <!-- comment:abc123 -->commented text<!-- commend-end:abc123 --> in it.
+This has <!-- comment:abc123 --><!-- # John Doe: I think we should rephrase this -->commented text<!-- commend-end:abc123 --> in it.
 ```
 
-These round-trip through download/upload and map to Confluence's inline comment markers.
+These tags round-trip through download/upload and map to Confluence's inline comment markers. 
+
+When downloading, the tool also fetches the actual comment text and author and embeds them as a separate `<!-- # Author: Text -->` comment directly after the marker tag to give you context during editing. These injected text comments are automatically stripped when uploading to avoid cluttering the Confluence page.
 
 ### Node ID Tags
 

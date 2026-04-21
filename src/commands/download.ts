@@ -203,6 +203,9 @@ export async function downloadAll(opts: Options): Promise<void> {
     // Check for unsupported features before conversion
     const unsupportedFeatures = detectUnsupportedFeatures(storageHtml);
 
+    // Fetch inline comments to embed their contents
+    const comments = await client.getPageComments(meta.id).catch(() => []);
+
     const blocks = storageToMarkdownBlocks(storageHtml);
     // Join blocks and apply a final token decode pass for any durable tokens that might
     // have survived the per-block decoding (defensive against edge conversions)
@@ -223,6 +226,28 @@ export async function downloadAll(opts: Options): Promise<void> {
         (_m, enc) =>
           `<!-- commend-end:${decodeURIComponent(String(enc || ''))} -->`,
       );
+
+    // Embed inline comment contents if available
+    for (const c of comments) {
+      const ref = c.extensions?.inlineProperties?.markerRef;
+      if (ref) {
+        const author =
+          c.version?.by?.displayName ||
+          c.author?.displayName ||
+          c.history?.createdBy?.displayName ||
+          'Unknown';
+        const text = (c.body?.view?.value || c.body?.storage?.value || '')
+          .replace(/<[^>]+>/g, ' ') // strip HTML and replace with space to avoid gluing
+          .replace(/\s+/g, ' ') // collapse multiple spaces
+          .replace(/-->/g, '--&gt;') // escape comment endings
+          .trim();
+        
+        const tag = `<!-- comment:${ref} -->`;
+        // Use split/join to replace all occurrences without regex escaping issues
+        body = body.split(tag).join(`${tag}<!-- # ${author}: ${text} -->`);
+      }
+    }
+
     // Preserve optional header fields (emoji/status/image/readonly) from existing file header if present
     const existingText = fs.existsSync(filePath)
       ? fs.readFileSync(filePath, 'utf8')
@@ -381,6 +406,9 @@ async function downloadFromUrl(
   // Check for unsupported features before conversion
   const unsupportedFeatures = detectUnsupportedFeatures(storageHtml);
 
+  // Fetch inline comments to embed their contents
+  const comments = await client.getPageComments(pageId).catch(() => []);
+
   // Convert storage HTML to markdown
   const blocks = storageToMarkdownBlocks(storageHtml);
   let body = blocks
@@ -399,6 +427,27 @@ async function downloadFromUrl(
       (_m, enc) =>
         `<!-- commend-end:${decodeURIComponent(String(enc || ''))} -->`,
     );
+
+  // Embed inline comment contents if available
+  for (const c of comments) {
+    const ref = c.extensions?.inlineProperties?.markerRef;
+    if (ref) {
+        const author =
+          c.version?.by?.displayName ||
+          c.author?.displayName ||
+          c.history?.createdBy?.displayName ||
+          'Unknown';
+        const text = (c.body?.view?.value || c.body?.storage?.value || '')
+          .replace(/<[^>]+>/g, ' ') // strip HTML and replace with space to avoid gluing
+          .replace(/\s+/g, ' ') // collapse multiple spaces
+          .replace(/-->/g, '--&gt;') // escape comment endings
+          .trim();
+      
+      const tag = `<!-- comment:${ref} -->`;
+      // Use split/join to replace all occurrences without regex escaping issues
+      body = body.split(tag).join(`${tag}<!-- # ${author}: ${text} -->`);
+    }
+  }
 
   // Check if file already exists to preserve READONLY flag
   const existingText = fs.existsSync(filePath)
