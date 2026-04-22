@@ -1,3 +1,7 @@
+## 1.13.0 (2026-04-22)
+
+* feat: enhance comment retrieval and threading ([b7a128d](https://github.com/kellertobias/confluence-toolbelt/commit/b7a128d))
+
 ## 1.12.0 (2026-04-21)
 
 * feat: comment text download ([427c04d](https://github.com/kellertobias/confluence-toolbelt/commit/427c04d))
