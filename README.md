@@ -98,6 +98,22 @@ Don't forget to setup the .env file with your Jira credentials and default value
 
 Both download and upload commands automatically commit changes to git for version tracking. This keeps your git history in sync with Confluence. To disable this behavior, set the `NO_AUTO_COMMIT` environment variable.
 
+### Dash Normalization on Upload
+
+When uploading, unicode dashes are automatically replaced with a regular ASCII hyphen `-` in both the page body and the page title. This keeps pages clean of smart-quote-style autocorrections that sneak in from editors or copy/paste.
+
+Characters that get normalized:
+
+- `—` em dash (U+2014)
+- `–` en dash (U+2013)
+- `‒` figure dash (U+2012)
+- `―` horizontal bar (U+2015)
+- `‐` hyphen (U+2010)
+- `‑` non-breaking hyphen (U+2011)
+- `−` minus sign (U+2212)
+
+To keep the original dashes as-is, set `EM_DASH=1` in your `.env` file.
+
 ## Markdown Format
 
 Page content is stored as markdown files with a few extensions for Confluence-specific features. This means not all Confluence layouting features are supported, but the most common ones work well.

@@ -145,7 +145,7 @@ export async function uploadAll(opts: Options): Promise<void> {
       await client.getPageStorage(meta.pageId);
     // Header does not support emoji; keep param reserved for future parity with download extras
     const effectiveTitle = buildEffectiveTitle(
-      meta.title || title,
+      normalizeDashes(meta.title || title),
       undefined,
       meta.status,
     );
@@ -153,6 +153,9 @@ export async function uploadAll(opts: Options): Promise<void> {
     
     // Strip injected inline comment contents so they don't get uploaded as text
     resolvedBody = resolvedBody.replace(/<!--\s*#[\s\S]*?-->/g, '');
+
+    // Normalize unicode dashes to plain hyphen-minus unless explicitly disabled
+    resolvedBody = normalizeDashes(resolvedBody);
 
     const blocks = parseBlocks(resolvedBody);
 
@@ -411,6 +414,27 @@ function walkMarkdown(
     }
   }
   return out;
+}
+
+/**
+ * Replace unicode dash-like characters (em dash, en dash, figure dash, minus
+ * sign, etc.) with a plain ASCII hyphen-minus before upload.
+ *
+ * Why: Confluence (and many readers) are happier with the plain `-` character,
+ * and content often picks up fancy dashes from editors or autocorrect.
+ *
+ * Opt-out: set `EM_DASH=1` in the environment to keep dashes as-is.
+ */
+function normalizeDashes(input: string): string;
+function normalizeDashes(input: string | undefined): string | undefined;
+function normalizeDashes(input: string | undefined): string | undefined {
+  if (input == null) {
+    return input;
+  }
+  if (process.env.EM_DASH === '1') {
+    return input;
+  }
+  return input.replace(/[\u2010-\u2015\u2212]/g, '-');
 }
 
 function buildEffectiveTitle(
