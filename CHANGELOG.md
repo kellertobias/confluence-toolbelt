@@ -1,3 +1,8 @@
+## 1.14.0 (2026-04-22)
+
+* feat: normalize unicode dashes to ascii hyphen on upload ([12131b5](https://github.com/kellertobias/confluence-toolbelt/commit/12131b5))
+* fix: improve markdown escaping for dashes and em delimiters ([d23633b](https://github.com/kellertobias/confluence-toolbelt/commit/d23633b))
+
 ## 1.13.0 (2026-04-22)
 
 * feat: enhance comment retrieval and threading ([b7a128d](https://github.com/kellertobias/confluence-toolbelt/commit/b7a128d))
