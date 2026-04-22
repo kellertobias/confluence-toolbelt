@@ -12,7 +12,8 @@ import { gfm } from "turndown-plugin-gfm";
 export const turndown = new TurndownService({
   headingStyle: "atx",
   codeBlockStyle: "fenced",
-});
+  emDelimiter: "*",
+} as any);
 turndown.use(gfm);
 
 /**

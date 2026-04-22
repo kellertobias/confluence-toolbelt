@@ -34,6 +34,14 @@ export function unescapeMarkdownUnderscores(md: string): string {
   // Step 5: inside code regions (inline `code` and fenced ``` blocks), remove
   // escapes before '*'.
   out = unescapeAsterisksInsideCode(out);
+  /**
+   * Step 6: Unescape sequences of three or more dashes that Turndown escapes
+   * (e.g. `\---` or `\----`) to prevent confusion with setext headings.
+   *
+   * Why: On download, plain dash sequences in paragraphs are preserved as-is
+   * in Confluence, and Turndown's safety escape is cosmetic noise.
+   */
+  out = out.replace(/\\(-{3,})/g, "$1");
   return out;
 }
 
