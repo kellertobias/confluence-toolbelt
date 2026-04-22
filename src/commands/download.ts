@@ -228,23 +228,48 @@ export async function downloadAll(opts: Options): Promise<void> {
       );
 
     // Embed inline comment contents if available
+    const commentThreads: Record<string, { author: string, text: string, date: Date }[]> = {};
+    const idToMarkerRef: Record<string, string> = {};
+    
+    // First pass: identify root inline comments
     for (const c of comments) {
-      const ref = c.extensions?.inlineProperties?.markerRef;
-      if (ref) {
+      if (c.extensions?.inlineProperties?.markerRef) {
+        idToMarkerRef[c.id] = c.extensions.inlineProperties.markerRef;
+        commentThreads[c.extensions.inlineProperties.markerRef] = [];
+      }
+    }
+
+    // Second pass: extract text and group by thread
+    for (const c of comments) {
+      const rootId = c.ancestors && c.ancestors.length > 0 ? c.ancestors[0].id : c.id;
+      const markerRef = idToMarkerRef[rootId];
+      
+      if (markerRef) {
         const author =
           c.version?.by?.displayName ||
           c.author?.displayName ||
           c.history?.createdBy?.displayName ||
           'Unknown';
+        const date = new Date(c.version?.when || c.history?.createdDate || 0);
         const text = (c.body?.view?.value || c.body?.storage?.value || '')
           .replace(/<[^>]+>/g, ' ') // strip HTML and replace with space to avoid gluing
           .replace(/\s+/g, ' ') // collapse multiple spaces
           .replace(/-->/g, '--&gt;') // escape comment endings
           .trim();
         
+        if (text) {
+          if (!commentThreads[markerRef]) commentThreads[markerRef] = [];
+          commentThreads[markerRef].push({ author, text, date });
+        }
+      }
+    }
+
+    for (const [ref, thread] of Object.entries(commentThreads)) {
+      if (thread.length > 0) {
+        thread.sort((a, b) => a.date.getTime() - b.date.getTime());
+        const threadTags = thread.map(msg => `<!-- # ${msg.author}: ${msg.text} -->`).join('');
         const tag = `<!-- comment:${ref} -->`;
-        // Use split/join to replace all occurrences without regex escaping issues
-        body = body.split(tag).join(`${tag}<!-- # ${author}: ${text} -->`);
+        body = body.split(tag).join(`${tag}${threadTags}`);
       }
     }
 
@@ -429,23 +454,48 @@ async function downloadFromUrl(
     );
 
   // Embed inline comment contents if available
+  const commentThreads: Record<string, { author: string, text: string, date: Date }[]> = {};
+  const idToMarkerRef: Record<string, string> = {};
+  
+  // First pass: identify root inline comments
   for (const c of comments) {
-    const ref = c.extensions?.inlineProperties?.markerRef;
-    if (ref) {
-        const author =
-          c.version?.by?.displayName ||
-          c.author?.displayName ||
-          c.history?.createdBy?.displayName ||
-          'Unknown';
-        const text = (c.body?.view?.value || c.body?.storage?.value || '')
-          .replace(/<[^>]+>/g, ' ') // strip HTML and replace with space to avoid gluing
-          .replace(/\s+/g, ' ') // collapse multiple spaces
-          .replace(/-->/g, '--&gt;') // escape comment endings
-          .trim();
+    if (c.extensions?.inlineProperties?.markerRef) {
+      idToMarkerRef[c.id] = c.extensions.inlineProperties.markerRef;
+      commentThreads[c.extensions.inlineProperties.markerRef] = [];
+    }
+  }
+
+  // Second pass: extract text and group by thread
+  for (const c of comments) {
+    const rootId = c.ancestors && c.ancestors.length > 0 ? c.ancestors[0].id : c.id;
+    const markerRef = idToMarkerRef[rootId];
+    
+    if (markerRef) {
+      const author =
+        c.version?.by?.displayName ||
+        c.author?.displayName ||
+        c.history?.createdBy?.displayName ||
+        'Unknown';
+      const date = new Date(c.version?.when || c.history?.createdDate || 0);
+      const text = (c.body?.view?.value || c.body?.storage?.value || '')
+        .replace(/<[^>]+>/g, ' ') // strip HTML and replace with space to avoid gluing
+        .replace(/\s+/g, ' ') // collapse multiple spaces
+        .replace(/-->/g, '--&gt;') // escape comment endings
+        .trim();
       
+      if (text) {
+        if (!commentThreads[markerRef]) commentThreads[markerRef] = [];
+        commentThreads[markerRef].push({ author, text, date });
+      }
+    }
+  }
+
+  for (const [ref, thread] of Object.entries(commentThreads)) {
+    if (thread.length > 0) {
+      thread.sort((a, b) => a.date.getTime() - b.date.getTime());
+      const threadTags = thread.map(msg => `<!-- # ${msg.author}: ${msg.text} -->`).join('');
       const tag = `<!-- comment:${ref} -->`;
-      // Use split/join to replace all occurrences without regex escaping issues
-      body = body.split(tag).join(`${tag}<!-- # ${author}: ${text} -->`);
+      body = body.split(tag).join(`${tag}${threadTags}`);
     }
   }
 
