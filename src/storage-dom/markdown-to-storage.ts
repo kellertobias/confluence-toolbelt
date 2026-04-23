@@ -38,8 +38,10 @@ const DEFLIST_COMMENT_RE = /^\s*<!--\s*deflist\s+(.+?)\s*-->\s*$/i;
  * preambles), code/mermaid blocks, lists, images, blockquotes and panels.
  * Inline HTML comments inside table cells are preserved as-is.
  */
-export function markdownToStorageHtml(md: string): string {
+export function markdownToStorageHtml(md: string, debug = false): string {
+  const dbg = (msg: string) => { if (debug) console.log(`[debug:md] ${msg}`); };
   const lines = md.split(/\r?\n/);
+  dbg(`converting ${lines.length} lines`);
   const out: string[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -49,11 +51,14 @@ export function markdownToStorageHtml(md: string): string {
       continue;
     }
 
+    dbg(`line ${i}: ${line.slice(0, 100)}`);
+
     // Inline status tag: `<!-- status:color:Title -->`
     const statusTag = line.match(
       /^\s*<!--\s*status:([^:>]+):\s*([^>]+)\s*-->\s*$/i,
     );
     if (statusTag) {
+      dbg(`  → status tag`);
       const color = (statusTag[1] || "").trim();
       const title = (statusTag[2] || "").trim();
       out.push(
@@ -66,6 +71,7 @@ export function markdownToStorageHtml(md: string): string {
     // Fenced code blocks ```lang? ... ```
     const codeFence = line.match(/^```(?<lang>[A-Za-z0-9_+-]*)\s*$/);
     if (codeFence) {
+      dbg(`  → fenced code block`);
       const lang = (codeFence.groups?.lang || "").trim();
       i++;
       const body: string[] = [];
@@ -86,6 +92,7 @@ export function markdownToStorageHtml(md: string): string {
       !/^\s*[-*]\s+/.test(line) &&
       !/^\s*\d+\.\s+/.test(line)
     ) {
+      dbg(`  → indented code block`);
       const { html, nextIndex } = consumeIndentedCodeBlock(lines, i);
       out.push(html);
       i = nextIndex;
@@ -95,6 +102,7 @@ export function markdownToStorageHtml(md: string): string {
     // Widget tags: `<!-- widget:NAME -->`
     const widget = line.match(/^\s*<!--\s*widget:([A-Za-z0-9_-]+)\s*-->\s*$/i);
     if (widget) {
+      dbg(`  → widget`);
       const name = widget[1]?.toLowerCase();
       out.push(
         `<ac:structured-macro ac:name="${name}"><ac:rich-text-body/></ac:structured-macro>`,
@@ -105,6 +113,7 @@ export function markdownToStorageHtml(md: string): string {
 
     // Horizontal rule (canonical dashed form).
     if (/^\s*-------\s*$/.test(line)) {
+      dbg(`  → hr`);
       out.push("<hr/>");
       i++;
       continue;
@@ -115,6 +124,7 @@ export function markdownToStorageHtml(md: string): string {
       /^\s*<!--\s*table:(\S+)(?:\s+([\d,]+))?\s*-->\s*$/i,
     );
     if (tableConfigMatch && looksLikeTableHeader(lines, i + 1)) {
+      dbg(`  → table (with config)`);
       const layoutName = (tableConfigMatch[1] || "").toLowerCase();
       const sharesStr = tableConfigMatch[2] || "";
       const colWidths = sharesStr
@@ -134,6 +144,7 @@ export function markdownToStorageHtml(md: string): string {
     }
 
     if (looksLikeTableHeader(lines, i)) {
+      dbg(`  → table`);
       const { html, nextIndex } = consumeTable(lines, i);
       out.push(html);
       i = nextIndex;
@@ -143,6 +154,7 @@ export function markdownToStorageHtml(md: string): string {
     // Headings
     const h = line.match(/^(#{1,6})\s+(.+)$/);
     if (h) {
+      dbg(`  → heading h${h[1]?.length}`);
       const level = h[1]?.length;
       const text = h[2]?.trim() || "";
       out.push(`<h${level}>${inlineWithTokens(text)}</h${level}>`);
@@ -152,6 +164,7 @@ export function markdownToStorageHtml(md: string): string {
 
     // Requirement lists: consecutive `- REQ(ID, VERB)` / `- nREQ(ID, VERB)`.
     if (/^\s*[-*]\s+n?REQ\s*\(/.test(line)) {
+      dbg(`  → req list`);
       const reqResult = consumeReqList(lines, i);
       if (reqResult) {
         out.push(reqResult.html);
@@ -165,6 +178,7 @@ export function markdownToStorageHtml(md: string): string {
     // continuation lines for multi-line values).
     const deflistComment = line.match(DEFLIST_COMMENT_RE);
     if (deflistComment) {
+      dbg(`  → deflist`);
       const attrs = parseDeflistAttributes(deflistComment[1] || "");
       const keyword = (attrs.keyword || "").trim();
       const columns = (attrs.columns || "")
@@ -183,6 +197,7 @@ export function markdownToStorageHtml(md: string): string {
 
     // Unordered lists (- or *).
     if (/^\s*[-*]\s+/.test(line)) {
+      dbg(`  → unordered list`);
       const { html, nextIndex } = consumeList(lines, i, "unordered");
       out.push(html);
       i = nextIndex;
@@ -191,6 +206,7 @@ export function markdownToStorageHtml(md: string): string {
 
     // Ordered lists (1. 2. 3.) — preserve explicit starting number when possible.
     if (/^\s*\d+\.\s+/.test(line)) {
+      dbg(`  → ordered list`);
       const { html, nextIndex } = consumeList(lines, i, "ordered");
       out.push(html);
       i = nextIndex;
@@ -200,6 +216,7 @@ export function markdownToStorageHtml(md: string): string {
     // Markdown image, optionally followed by a caption line.
     const imgLine = line.match(/^!\[(.*?)\]\((.*?)\)\s*$/);
     if (imgLine) {
+      dbg(`  → image`);
       const alt = imgLine[1] || "";
       const src = imgLine[2] || "";
       const next = lines[i + 1] || "";
@@ -211,6 +228,7 @@ export function markdownToStorageHtml(md: string): string {
 
     // Info Panel blockquote: starts with `> <!-- panel:color:icon -->`
     if (/^>\s*<!--\s*panel:([^:>]+):([^>]+)\s*-->/.test(line)) {
+      dbg(`  → info panel`);
       const result = consumeInfoPanel(lines, i);
       if (result) {
         out.push(result.html);
@@ -221,6 +239,7 @@ export function markdownToStorageHtml(md: string): string {
 
     // Generic blockquote (without panel tag).
     if (/^>\s*/.test(line)) {
+      dbg(`  → blockquote`);
       const { html, nextIndex } = consumeBlockquote(lines, i);
       out.push(html);
       i = nextIndex;
@@ -244,8 +263,11 @@ export function markdownToStorageHtml(md: string): string {
       para.push(lines[i] || "");
       i++;
     }
+    dbg(`  → paragraph (${para.length} lines), calling inlineWithTokens on ${para.join(" ").trim().length} chars`);
     out.push(`<p>${inlineWithTokens(para.join(" ").trim())}</p>`);
+    dbg(`  ✓ paragraph done`);
   }
+  dbg(`conversion complete, output ${out.join("").length} chars`);
   return out.join("");
 }
 

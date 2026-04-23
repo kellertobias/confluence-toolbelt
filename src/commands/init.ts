@@ -79,7 +79,7 @@ async function initGitRepo(opts: Options): Promise<void> {
  */
 function ensureGitignore(opts: Options): boolean {
   const gitignorePath = path.resolve(opts.cwd, '.gitignore');
-  const entriesToAdd = ['.env'];
+  const entriesToAdd = ['.env', '*.base.confluence', '.*.base.confluence'];
 
   if (!fs.existsSync(gitignorePath)) {
     // Create new .gitignore with recommended entries
@@ -92,6 +92,10 @@ function ensureGitignore(opts: Options): boolean {
       '',
       '# Build output',
       'dist/',
+      '',
+      '# Confluence sync baseline sidecars (per-user, never commit)',
+      '*.base.confluence',
+      '.*.base.confluence',
       '',
       '# OS files',
       '.DS_Store',

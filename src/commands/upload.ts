@@ -23,7 +23,16 @@ export async function uploadAll(opts: Options): Promise<void> {
   const { args = [] } = opts;
   const all = args.includes('--all');
   const verbose = args.includes('--verbose');
-  const client = fromEnv();
+  const debug = args.includes('--debug');
+  const dbg = (msg: string) => { if (debug) console.log(`[debug] ${msg}`); };
+  const client = fromEnv(debug);
+
+  if (debug) {
+    const base = process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '(not set)';
+    dbg(`confluence base: ${base}`);
+    dbg(`auth: email=${process.env.CONFLUENCE_EMAIL ? 'set' : 'MISSING'} token=${process.env.CONFLUENCE_API_TOKEN ? 'set' : 'MISSING'}`);
+    dbg(`cwd: ${opts.cwd}`);
+  }
 
   /**
    * Determine which files to upload based on provided arguments.
@@ -129,42 +138,57 @@ export async function uploadAll(opts: Options): Promise<void> {
   }
 
   for (const file of files) {
+    const rel = path.relative(opts.cwd, file);
+    dbg(`--- processing ${rel} ---`);
+
     const md = fs.readFileSync(file, 'utf8');
+    dbg(`read ${md.length} chars from disk`);
+
     const { meta, body } = parseHeader(md);
+    dbg(`header: pageId=${meta.pageId ?? '(none)'} spaceId=${meta.spaceId ?? '(none)'} title="${meta.title ?? ''}" status="${meta.status ?? ''}" readonly=${!!meta.readonly}`);
+    dbg(`body: ${body.length} chars`);
+
     if (!meta.pageId) {
       console.log(`[upload] Skip (no pageId): ${file}`);
       continue;
     }
     // Skip files marked as READONLY - they can be downloaded but never uploaded
     if (meta.readonly) {
-      console.log(`[upload] Skip (READONLY): ${path.relative(opts.cwd, file)}`);
+      console.log(`[upload] Skip (READONLY): ${rel}`);
       continue;
     }
 
+    dbg(`fetching remote storage for pageId=${meta.pageId}`);
     const { storageHtml, version, title, spaceId } =
       await client.getPageStorage(meta.pageId);
+    dbg(`remote: version=${version} spaceId=${spaceId ?? '(none)'}`);
+
     // Header does not support emoji; keep param reserved for future parity with download extras
     const effectiveTitle = buildEffectiveTitle(
       normalizeDashes(meta.title || title),
       undefined,
       meta.status,
     );
+    dbg(`effectiveTitle="${effectiveTitle ?? ''}"`);
+
     let resolvedBody = resolveLocalPageLinks(body, file, opts.cwd);
-    
+    dbg(`after link resolution: ${resolvedBody.length} chars`);
+
     // Strip injected inline comment contents so they don't get uploaded as text
     resolvedBody = resolvedBody.replace(/<!--\s*#[\s\S]*?-->/g, '');
+    dbg(`after comment strip: ${resolvedBody.length} chars`);
 
     // Normalize unicode dashes to plain hyphen-minus unless explicitly disabled
     resolvedBody = normalizeDashes(resolvedBody);
 
     const blocks = parseBlocks(resolvedBody);
+    dbg(`parsed ${blocks.length} block(s), ${blocks.filter(b => b.tag?.nodeId).length} with nodeId tags`);
 
     if (verbose) {
       /**
        * Report resolved metadata for the page and the number of content blocks parsed.
        * How: Show pageId, effective title, space, and block counts to aid troubleshooting.
        */
-      const rel = path.relative(opts.cwd, file);
       console.log(`[upload] Preparing ${rel}`);
       console.log(
         `[upload]   pageId=${meta.pageId} space=${meta.spaceId || spaceId || '(inherit)'}`,
@@ -181,7 +205,8 @@ export async function uploadAll(opts: Options): Promise<void> {
       if (!b.tag?.nodeId) {
         continue;
       }
-      const html = markdownToStorageHtml(b.text);
+      const html = markdownToStorageHtml(b.text, debug);
+      dbg(`  nodeId=${b.tag.nodeId} -> ${html.length} chars html`);
       if (html.trim()) {
         replacements[b.tag.nodeId] = html;
       }
@@ -198,10 +223,12 @@ export async function uploadAll(opts: Options): Promise<void> {
       }
       const { html, missing } = replaceNodesById(storageHtml, replacements);
       if (missing.length > 0) {
+        dbg(`missing nodeIds: ${missing.join(', ')} — falling back to full update`);
         console.warn(
           `[upload] Missing nodeIds on page ${meta.pageId}: ${missing.join(', ')}. Falling back to full update.`,
         );
-        const fullHtml = markdownToStorageHtml(resolvedBody);
+        const fullHtml = markdownToStorageHtml(resolvedBody, debug);
+        dbg(`full html: ${fullHtml.length} chars`);
         if (verbose) {
           const verbosePath = path.join(
             path.dirname(file),
@@ -220,6 +247,7 @@ export async function uploadAll(opts: Options): Promise<void> {
             );
           }
         }
+        dbg(`calling updatePageStorage (partial→full fallback)`);
         await client.updatePageStorage(
           meta.pageId,
           fullHtml,
@@ -228,6 +256,7 @@ export async function uploadAll(opts: Options): Promise<void> {
           meta.spaceId || spaceId,
         );
       } else {
+        dbg(`partial update: ${Object.keys(replacements).length} node(s) replaced, result ${html.length} chars`);
         if (verbose) {
           const verbosePath = path.join(
             path.dirname(file),
@@ -246,6 +275,7 @@ export async function uploadAll(opts: Options): Promise<void> {
             );
           }
         }
+        dbg(`calling updatePageStorage (partial)`);
         await client.updatePageStorage(
           meta.pageId,
           html,
@@ -256,7 +286,8 @@ export async function uploadAll(opts: Options): Promise<void> {
       }
     } else {
       // No tags -> full page replacement
-      const fullHtml = markdownToStorageHtml(resolvedBody);
+      const fullHtml = markdownToStorageHtml(resolvedBody, debug);
+      dbg(`no tags — full page replacement, html=${fullHtml.length} chars`);
       if (verbose) {
         console.log('[upload]   no tags detected -> full page update');
         const verbosePath = path.join(
@@ -276,6 +307,7 @@ export async function uploadAll(opts: Options): Promise<void> {
           );
         }
       }
+      dbg(`calling updatePageStorage (full)`);
       await client.updatePageStorage(
         meta.pageId,
         fullHtml,
@@ -285,7 +317,7 @@ export async function uploadAll(opts: Options): Promise<void> {
       );
     }
     console.log(
-      `[upload] Updated page ${meta.pageId} from ${path.relative(opts.cwd, file)}`,
+      `[upload] Updated page ${meta.pageId} from ${rel}`,
     );
 
     /**
@@ -294,7 +326,9 @@ export async function uploadAll(opts: Options): Promise<void> {
      * track what was uploaded and when.
      * How: Stage and commit only this specific file with a standardized message.
      */
+    dbg(`committing ${rel} to git`);
     await commitFile(opts.cwd, file);
+    dbg(`done with ${rel}`);
   }
 }
 

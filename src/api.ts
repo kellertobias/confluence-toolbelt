@@ -12,6 +12,7 @@ export interface ConfluenceClientOptions {
   email?: string;
   apiToken?: string;
   accessToken?: string; // optional bearer alternative
+  debug?: boolean;
 }
 
 export interface PageResponseV2 {
@@ -42,14 +43,31 @@ function buildAuthHeader(
 export class ConfluenceClient {
   private readonly base: string;
   private readonly headers: Record<string, string>;
+  private readonly debug: boolean;
 
   constructor(opts: ConfluenceClientOptions) {
     this.base = opts.baseUrl.replace(/\/$/, '');
+    this.debug = opts.debug ?? false;
     this.headers = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       ...buildAuthHeader(opts),
     };
+  }
+
+  private dbg(msg: string): void {
+    if (this.debug) console.log(`[debug:api] ${msg}`);
+  }
+
+  private async fetchWithDebug(url: string, init: RequestInit = {}): Promise<Response> {
+    const method = (init.method ?? 'GET').toUpperCase();
+    const relPath = url.replace(this.base, '');
+    const bodyLen = init.body ? String(init.body).length : 0;
+    this.dbg(`→ ${method} ${relPath}${bodyLen ? ` (body ${bodyLen} bytes)` : ''}`);
+    const t = Date.now();
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) });
+    this.dbg(`← ${res.status} ${res.statusText} in ${Date.now() - t}ms`);
+    return res;
   }
 
   private buildV1(
@@ -80,7 +98,7 @@ export class ConfluenceClient {
 
   async getPage(pageId: string): Promise<PageResponseV2> {
     const url = this.build(`/api/v2/pages/${pageId}`);
-    const res = await fetch(url, { headers: this.headers });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
       throw new Error(
         `getPage ${pageId} failed: ${res.status} ${res.statusText}`,
@@ -94,7 +112,7 @@ export class ConfluenceClient {
     const url = this.build(`/api/v2/pages/${pageId}`, {
       expand: 'icon,coverImage',
     } as any);
-    const res = await fetch(url, { headers: this.headers });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
       return this.getPage(pageId);
     }
@@ -110,15 +128,17 @@ export class ConfluenceClient {
     const url = this.build(`/api/v2/pages/${pageId}`, {
       'body-format': 'storage',
     });
-    const res = await fetch(url, { headers: this.headers });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
+      const body = await res.text().catch(() => '');
       throw new Error(
-        `getPageStorage ${pageId} failed: ${res.status} ${res.statusText}`,
+        `getPageStorage ${pageId} failed: ${res.status} ${res.statusText}\n${body.slice(0, 300)}`,
       );
     }
     const data: PageResponseV2 = await res.json();
     const storageHtml = data?.body?.storage?.value ?? '';
     const version = data?.version?.number ?? 1;
+    this.dbg(`  page title="${data.title}" version=${version} storageHtml=${storageHtml.length} chars`);
     return { title: data.title, storageHtml, version, spaceId: data.spaceId };
   }
 
@@ -126,7 +146,7 @@ export class ConfluenceClient {
     const url = this.build(`/api/v2/pages/${pageId}`, {
       'body-format': 'atlas_doc_format',
     });
-    const res = await fetch(url, { headers: this.headers });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
       return undefined;
     }
@@ -144,7 +164,7 @@ export class ConfluenceClient {
       expand:
         'metadata,metadata.properties,body.storage,body.atlas_doc_format,space,version',
     });
-    const res = await fetch(url, { headers: this.headers });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
       return undefined;
     }
@@ -154,9 +174,9 @@ export class ConfluenceClient {
   async getPageComments(pageId: string): Promise<any[]> {
     const url = this.buildV1(`/content/${pageId}/descendant/comment`, {
       expand: 'history,version,body.view,extensions.inlineProperties,ancestors',
-      limit: 100, // assuming no more than 100 comments per page for simplicity, or handle pagination
+      limit: 100,
     });
-    const res = await fetch(url, { headers: this.headers });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
       return [];
     }
@@ -180,7 +200,8 @@ export class ConfluenceClient {
       spaceId,
       body: { storage: { value: nextHtml, representation: 'storage' } },
     };
-    const res = await fetch(url, {
+    this.dbg(`  updatePageStorage pageId=${pageId} title="${title}" version=${currentVersion + 1} html=${nextHtml.length} chars`);
+    const res = await this.fetchWithDebug(url, {
       method: 'PUT',
       headers: this.headers,
       body: JSON.stringify(payload),
@@ -207,7 +228,7 @@ export class ConfluenceClient {
     if (parentId) {
       payload.parentId = parentId;
     }
-    const res = await fetch(url, {
+    const res = await this.fetchWithDebug(url, {
       method: 'POST',
       headers: this.headers,
       body: JSON.stringify(payload),
@@ -222,7 +243,7 @@ export class ConfluenceClient {
   }
 }
 
-export function fromEnv(): ConfluenceClient {
+export function fromEnv(debug = false): ConfluenceClient {
   const baseUrl =
     process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '';
   if (!baseUrl) {
@@ -233,5 +254,6 @@ export function fromEnv(): ConfluenceClient {
     email: process.env.CONFLUENCE_EMAIL,
     apiToken: process.env.CONFLUENCE_API_TOKEN,
     accessToken: process.env.CONFLUENCE_ACCESS_TOKEN,
+    debug,
   });
 }
