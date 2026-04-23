@@ -42,6 +42,7 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^10.3.5",
     "@semantic-release/release-notes-generator": "^14.0.1",
+    "@types/diff-match-patch": "^1.0.36",
     "@types/node": "^22.7.5",
     "conventional-changelog-conventionalcommits": "^7.0.2",
     "semantic-release": "^24.0.0",
@@ -50,6 +51,7 @@
     "vitest": "^4.0.4"
   },
   "dependencies": {
+    "diff-match-patch": "^1.0.5",
     "dotenv": "^16.4.5",
     "enquirer": "^2.4.1",
     "jsdom": "^25.0.1",

@@ -928,8 +928,11 @@ function consumeListAtIndent(
       break;
     }
 
-    // More indented → start a nested sub-list.
+    // More indented → start a nested sub-list (only if the line is actually a list item).
     if (currentIndent > indent) {
+      if (!/^\s*[-*]\s+/.test(raw) && !/^\s*\d+\.\s+/.test(raw)) {
+        break; // Indented non-list content (e.g. continuation paragraph) — end the list.
+      }
       const subKind = /^\s*\d+\.\s+/.test(raw)
         ? ("ordered" as const)
         : ("unordered" as const);

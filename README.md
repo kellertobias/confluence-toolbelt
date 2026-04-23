@@ -2,9 +2,9 @@
 
 # Toolbelt for AI Assisted Confluence Page Editing
 
-This repository contains the required tools to download Confluence pages as markdown files, let Cursor or other AI agents edit the pages, and then upload the changes back to Confluence including preserving (most) comments and mentions.
+This repository contains the required tools to download Confluence pages as markdown files, let Cursor or other AI agents edit the pages, and then upload the changes back to Confluence including preserving (most) comments and mentions. A `sync` command (experimental) handles the common case where you edit a page locally while others are commenting or editing it remotely — it performs a three-way merge and uploads the result.
 
-⚠️ This tool is completely Vibe coded in an afternoon. The code looks terrible and might be buggy. But it solves the problem I needed it for and the engineers in my company love it. Use at your own risk.
+⚠️ This tool is completely Vibe coded - the code looks terrible and isn't really up to my coding standards. But it solves the problem I needed it for and the engineers in my company love it.
 
 ## Usage and Use Cases
 
@@ -43,6 +43,52 @@ When downloading from a URL or pageId, the tool will:
 - Automatically commit the file to git
 
 ⚠️ If you want a file to be read-only, you can add the `READONLY` flag to the header. This is helpful for reference pages and templates that should not be modified.
+
+### Syncing Changes (WIP, Currently being developed.)
+
+> ⚠️ **Experimental** — `sync` is new and less battle-tested than `download`/`upload`. Back up your files before using it on important pages.
+
+`sync` is the recommended workflow when you edit a page locally while others may be commenting or editing it on Confluence at the same time. It performs a three-way merge (your local edits + new remote comments/edits + the last-known base) and then uploads the result.
+
+```bash
+npx @tobisk/confluence-tools sync              # interactive file picker
+npx @tobisk/confluence-tools sync page.md     # sync a specific file
+npx @tobisk/confluence-tools sync --all       # sync every tracked file
+npx @tobisk/confluence-tools sync --no-upload # merge only, skip upload
+npx @tobisk/confluence-tools sync --verbose   # show detailed progress
+```
+
+**How it works:**
+
+1. Pulls the current remote page and its inline comments from Confluence.
+2. Loads the last-known remote state from a hidden sidecar file (`.page.md.base.confluence`). Falls back to the git HEAD version, and further falls back to a simpler 2-way merge with a warning if neither is available.
+3. Three-way merges each block:
+   - **Only you changed it** → keep your edit, reattach any remote comments whose anchor text is still present.
+   - **Only remote changed** → accept the remote version (picks up new edits and comments).
+   - **Both changed the same way** → accept the remote version.
+   - **Both changed differently** → emit git-style conflict markers; upload is skipped until you resolve them.
+4. Comments whose anchor text was deleted locally are moved to a `# Detached Comments` section at the end of the file so you don't lose them.
+5. Writes the merged file, refreshes the sidecar, commits it, and uploads (unless `--no-upload`).
+
+**Conflict resolution:**
+
+When a conflict is detected you'll see `<<<<<<< LOCAL` / `>>>>>>> REMOTE` markers in the file, just like a git merge conflict. Edit the file to resolve them (delete the markers and keep the text you want), then run `sync` again.
+
+**Detached comments:**
+
+When a comment's anchor text no longer exists in your local version, it's moved to a trailing section rather than discarded:
+
+```markdown
+# Detached Comments
+
+- <!-- comment:abc123 --><!-- # Alice: We should rephrase this -->Alice @ Section Title<!-- commend-end:abc123 -->
+```
+
+You can re-anchor a detached comment by moving the `<!-- comment:... -->...<!-- commend-end:... -->` pair to the relevant text in the document body, then running `sync --no-upload` or uploading manually.
+
+**Sidecar files:**
+
+`sync` and `download` both write a hidden sidecar file (`.page.md.base.confluence`) alongside each markdown file. This file stores the raw Confluence storage HTML from the last pull and is used as the merge base. It is listed in `.gitignore` by `init` and should never be committed.
 
 ### Uploading Changes
 
@@ -496,9 +542,11 @@ Confluence inline comments are preserved using paired HTML comment tags:
 This has <!-- comment:abc123 --><!-- # John Doe: I think we should rephrase this -->commented text<!-- commend-end:abc123 --> in it.
 ```
 
-These tags round-trip through download/upload and map to Confluence's inline comment markers. 
+These tags round-trip through download/upload and map to Confluence's inline comment markers.
 
 When downloading, the tool also fetches the actual comment text and author and embeds them as a separate `<!-- # Author: Text -->` comment directly after the marker tag to give you context during editing. These injected text comments are automatically stripped when uploading to avoid cluttering the Confluence page.
+
+When using `sync`, comments whose anchor text was deleted locally are moved to a `# Detached Comments` section at the end of the file rather than lost. See the [Syncing Changes](#syncing-changes-experimental) section for details.
 
 ### Node ID Tags
 
@@ -513,4 +561,3 @@ This paragraph has its own node ID.
 ```
 
 These tags should not be removed. If all node IDs are present, upload performs a surgical partial update. If any are missing, the tool falls back to a full page replacement.
-
