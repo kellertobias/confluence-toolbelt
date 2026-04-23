@@ -92,8 +92,8 @@ export function resolveConfluencePageUrls(
 
   return markdown.replace(
     pattern,
-    (_m, text: string, _space: string, id: string) =>
-      `[${text}](pageid:${id})`,
+    (_m, text: string, space: string, id: string) =>
+      `[${text}](pageid:${space}:${id})`,
   );
 }
 

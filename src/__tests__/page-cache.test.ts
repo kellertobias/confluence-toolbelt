@@ -26,7 +26,11 @@ describe('extractLinkedPageIds', () => {
     );
   });
 
-  it('extracts page:SPACE:ID links where ID is numeric', () => {
+  it('extracts pageid:SPACE:ID links', () => {
+    expect(extractLinkedPageIds('[Doc](pageid:MYSPACE:789)')).toContain('789');
+  });
+
+  it('extracts legacy page:SPACE:ID links where ID is numeric', () => {
     expect(extractLinkedPageIds('[Doc](page:MYSPACE:789)')).toContain('789');
   });
 
@@ -37,6 +41,11 @@ describe('extractLinkedPageIds', () => {
 
   it('deduplicates the same ID referenced twice', () => {
     const ids = extractLinkedPageIds('[A](pageid:42) and [B](pageid:42)');
+    expect(ids).toEqual(['42']);
+  });
+
+  it('deduplicates pageid:ID and pageid:SPACE:ID for the same ID', () => {
+    const ids = extractLinkedPageIds('[A](pageid:42) and [B](pageid:SP:42)');
     expect(ids).toEqual(['42']);
   });
 
@@ -147,24 +156,24 @@ describe('resolvePageTitleLinks', () => {
     } as any;
   }
 
-  it('rewrites page:SPACE:Title to pageid:ID when the page is found', async () => {
+  it('rewrites page:SPACE:Title to pageid:SPACE:ID when the page is found', async () => {
     const client = makeClient({ 'SP:My Page': { id: '123', title: 'My Page' } });
     const result = await resolvePageTitleLinks(
       'See [doc](page:SP:My Page) here.',
       client,
       {},
     );
-    expect(result).toBe('See [doc](pageid:123) here.');
+    expect(result).toBe('See [doc](pageid:SP:123) here.');
   });
 
-  it('rewrites page:SPACE:ID (numeric) to pageid:ID without an API call', async () => {
+  it('rewrites page:SPACE:ID (numeric) to pageid:SPACE:ID without an API call', async () => {
     const client = makeClient({});
     const result = await resolvePageTitleLinks(
       '[doc](page:SP:12345)',
       client,
       {},
     );
-    expect(result).toBe('[doc](pageid:12345)');
+    expect(result).toBe('[doc](pageid:SP:12345)');
     expect(client.getPageByTitle).not.toHaveBeenCalled();
   });
 
@@ -174,7 +183,7 @@ describe('resolvePageTitleLinks', () => {
       '42': { title: 'Cached', spaceKey: 'SP', checkedAt: new Date().toISOString() },
     };
     const result = await resolvePageTitleLinks('[doc](page:SP:Cached)', client, cache);
-    expect(result).toBe('[doc](pageid:42)');
+    expect(result).toBe('[doc](pageid:SP:42)');
     expect(client.getPageByTitle).not.toHaveBeenCalled();
   });
 
@@ -202,7 +211,7 @@ describe('resolvePageTitleLinks', () => {
       client,
       {},
     );
-    expect(result).toBe('[A](pageid:1) and [B](pageid:2)');
+    expect(result).toBe('[A](pageid:SP:1) and [B](pageid:SP:2)');
     expect(client.getPageByTitle).toHaveBeenCalledTimes(2);
   });
 
@@ -213,7 +222,7 @@ describe('resolvePageTitleLinks', () => {
       client,
       {},
     );
-    expect(result).toBe('[A](pageid:9) and [B](pageid:9)');
+    expect(result).toBe('[A](pageid:SP:9) and [B](pageid:SP:9)');
     expect(client.getPageByTitle).toHaveBeenCalledTimes(1);
   });
 

@@ -53,6 +53,7 @@ function mockClient(storageHtml: string, comments: RawComment[] = []): SyncClien
       version: 2,
     }),
     getPageComments: async () => comments,
+    getPageSpaceKey: async () => undefined,
   };
 }
 

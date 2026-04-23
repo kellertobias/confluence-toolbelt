@@ -537,7 +537,7 @@ describe('storageToMarkdownBlocks', () => {
     expect(md).toContain('[the design doc](page:Design Document)');
   });
 
-  it('converts Confluence page links with space key to markdown', () => {
+  it('converts Confluence page links with space key and title to markdown', () => {
     const html = `
       <p>
         Check <ac:link>
@@ -549,6 +549,7 @@ describe('storageToMarkdownBlocks', () => {
     const md = storageToMarkdownBlocks(html)
       .map((b) => b.markdown.trim())
       .join('\n');
+    // Title-only (no content-id) still uses page: scheme — resolved downstream.
     expect(md).toContain('[this page](page:MYSPACE:My Page)');
   });
 
@@ -672,6 +673,23 @@ describe('storageToMarkdownBlocks', () => {
     expect(md).toContain('[Design Doc](pageid:67890)');
   });
 
+  it('converts ri:page with ri:content-id and ri:space-key to pageid:SPACE:id on download', () => {
+    // Confluence resolves page-by-title refs to ri:content-id on save; the
+    // space key must be preserved so the round-trip produces pageid:E:5292327446.
+    const storageHtml = `
+      <p>
+        See <ac:link>
+          <ri:page ri:space-key="E" ri:content-id="5292327446" />
+          <ac:plain-text-link-body><![CDATA[TDD Doc]]></ac:plain-text-link-body>
+        </ac:link> for info.
+      </p>
+    `;
+    const md = storageToMarkdownBlocks(storageHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('[TDD Doc](pageid:E:5292327446)');
+  });
+
   it('round-trips pageid: links through storage HTML', () => {
     const md = '[Care Import TDD](pageid:42)';
     const html = markdownToStorageHtml(md);
@@ -685,12 +703,20 @@ describe('storageToMarkdownBlocks', () => {
     expect(roundTripped).toContain('[Care Import TDD](pageid:42)');
   });
 
-  it('converts page:SPACE:ID (numeric ID) to ri:content-entity on upload', () => {
+  it('converts pageid:SPACE:ID to ri:page with space-key on upload', () => {
+    const md = 'See [the doc](pageid:MYSPACE:12345) for details.';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:link>');
+    expect(html).toContain('<ri:page ri:space-key="MYSPACE" ri:content-id="12345"/>');
+    expect(html).not.toContain('ri:content-entity');
+  });
+
+  it('converts legacy page:SPACE:ID (numeric ID) to ri:page with space-key on upload', () => {
     const md = 'See [the doc](page:MYSPACE:12345) for details.';
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<ac:link>');
-    expect(html).toContain('<ri:content-entity ri:content-id="12345"/>');
-    expect(html).not.toContain('ri:page');
+    expect(html).toContain('<ri:page ri:space-key="MYSPACE" ri:content-id="12345"/>');
+    expect(html).not.toContain('ri:content-entity');
   });
 
   it('does not treat page:SPACE:Title as a content-entity link', () => {
@@ -1294,7 +1320,7 @@ describe('definition lists (deflist)', () => {
   it('handles markdown links in keys (link contains closing paren)', () => {
     const md = [
       '<!-- deflist keyword="Doc" columns=Document,Relevance -->',
-      '- Doc([TDD - Care Independence Strategy](page:E:5292327446)): Previous strategy doc.',
+      '- Doc([TDD - Care Independence Strategy](pageid:E:5292327446)): Previous strategy doc.',
     ].join('\n');
     const html = markdownToStorageHtml(md);
     // Key cell should contain a Confluence page link, not literal bracket text

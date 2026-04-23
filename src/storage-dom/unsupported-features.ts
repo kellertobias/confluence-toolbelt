@@ -48,7 +48,7 @@ const CHECKS: FeatureCheck[] = [
         )
           .replace(/<[^>]+>/g, "")
           .trim();
-        return !/mermaid/i.test(title);
+        return !/mermaid/i.test(title) && title !== "deflist-config" && title !== "req-table";
       });
     },
   },

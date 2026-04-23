@@ -332,16 +332,28 @@ function convertAcLink(original: string, innerStr: string): string {
     return `MD_PAGE_LINK~~${encodeURIComponent(pageRef)}~~${encodeURIComponent(linkText)}~~END`;
   }
 
-  // Page links by title → token
+  // Page links by title (or by resolved content-id) → token.
+  // Confluence may return either ri:content-title (when stored by title) or
+  // ri:content-id (when the title reference was resolved on save). Both can
+  // appear alongside ri:space-key.
   if (/<ri:page[^>]*>/i.test(innerStr)) {
     const contentTitle =
       innerStr.match(/ri:content-title=["']([^"']+)["']/i)?.[1] || "";
+    const contentId =
+      innerStr.match(/ri:content-id=["']([^"']+)["']/i)?.[1] || "";
     const spaceKey =
       innerStr.match(/ri:space-key=["']([^"']+)["']/i)?.[1] || "";
-    const linkText = extractLinkBody(innerStr) || contentTitle;
-    const pageRef = spaceKey
-      ? `page:${spaceKey}:${contentTitle}`
-      : `page:${contentTitle}`;
+    const linkText = extractLinkBody(innerStr) || contentTitle || contentId;
+    // When we have a numeric content-id with space, emit the stable pageid:SPACE:ID format.
+    // Title-only refs still use page: and will be resolved downstream.
+    let pageRef: string;
+    if (contentId && spaceKey) {
+      pageRef = `pageid:${spaceKey}:${contentId}`;
+    } else if (contentTitle && spaceKey) {
+      pageRef = `page:${spaceKey}:${contentTitle}`;
+    } else {
+      pageRef = `page:${contentTitle || contentId}`;
+    }
     return `MD_PAGE_LINK~~${encodeURIComponent(pageRef)}~~${encodeURIComponent(linkText)}~~END`;
   }
 

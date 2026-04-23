@@ -174,12 +174,12 @@ describe('resolveLocalPageLinks', () => {
 describe('resolveConfluencePageUrls', () => {
   const BASE = 'https://mycompany.atlassian.net';
 
-  it('converts a full Confluence page URL to pageid: format', () => {
+  it('converts a full Confluence page URL to pageid:SPACE:ID format', () => {
     const result = resolveConfluencePageUrls(
       '[My Page](https://mycompany.atlassian.net/wiki/spaces/MYSPACE/pages/12345/My-Page)',
       BASE,
     );
-    expect(result).toBe('[My Page](pageid:12345)');
+    expect(result).toBe('[My Page](pageid:MYSPACE:12345)');
   });
 
   it('works when the URL has no trailing title segment', () => {
@@ -187,7 +187,7 @@ describe('resolveConfluencePageUrls', () => {
       '[My Page](https://mycompany.atlassian.net/wiki/spaces/MYSPACE/pages/12345)',
       BASE,
     );
-    expect(result).toBe('[My Page](pageid:12345)');
+    expect(result).toBe('[My Page](pageid:MYSPACE:12345)');
   });
 
   it('handles http:// URLs', () => {
@@ -195,7 +195,7 @@ describe('resolveConfluencePageUrls', () => {
       '[Page](http://mycompany.atlassian.net/wiki/spaces/SP/pages/99)',
       BASE,
     );
-    expect(result).toBe('[Page](pageid:99)');
+    expect(result).toBe('[Page](pageid:SP:99)');
   });
 
   it('ignores URLs from a different host', () => {
@@ -213,7 +213,7 @@ describe('resolveConfluencePageUrls', () => {
       'See [A](https://mycompany.atlassian.net/wiki/spaces/SP/pages/1/A) and [B](https://mycompany.atlassian.net/wiki/spaces/SP/pages/2/B)',
       BASE,
     );
-    expect(result).toBe('See [A](pageid:1) and [B](pageid:2)');
+    expect(result).toBe('See [A](pageid:SP:1) and [B](pageid:SP:2)');
   });
 
   it('returns the original markdown when baseUrl is empty', () => {
@@ -226,7 +226,7 @@ describe('resolveConfluencePageUrls', () => {
       '[Page](https://mycompany.atlassian.net/wiki/spaces/SP/pages/42/Title)',
       'https://mycompany.atlassian.net/wiki',
     );
-    expect(result).toBe('[Page](pageid:42)');
+    expect(result).toBe('[Page](pageid:SP:42)');
   });
 });
 

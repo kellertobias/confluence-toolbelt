@@ -49,13 +49,19 @@ export function savePageCache(cwd: string, cache: PageCache): void {
 
 /**
  * Extract all numeric page IDs referenced in the resolved markdown body.
- * Matches `pageid:12345` and legacy `page:SPACE:12345` (all-numeric third part).
+ * Matches `pageid:12345`, `pageid:SPACE:12345`, and legacy `page:SPACE:12345`.
  */
 export function extractLinkedPageIds(markdown: string): string[] {
   const ids = new Set<string>();
+  // pageid:12345 (no space key)
   for (const m of markdown.matchAll(/\(pageid:(\d+)\)/g)) {
     if (m[1]) ids.add(m[1]);
   }
+  // pageid:SPACE:12345 (with space key)
+  for (const m of markdown.matchAll(/\(pageid:[^:)]+:(\d+)\)/g)) {
+    if (m[1]) ids.add(m[1]);
+  }
+  // Legacy page:SPACE:12345
   for (const m of markdown.matchAll(/\(page:[^:)]+:(\d+)\)/g)) {
     if (m[1]) ids.add(m[1]);
   }
@@ -187,12 +193,14 @@ export async function resolvePageTitleLinks(
   return markdown.replace(
     /\(page:([^:)]+):([^)]+)\)/g,
     (_m, spaceKey: string, titleOrId: string) => {
-      // Numeric ID with space prefix → drop the space, emit pageid:
+      // Numeric ID with space prefix → keep space, emit pageid:SPACE:ID
       if (/^\d+$/.test(titleOrId)) {
-        return `(pageid:${titleOrId})`;
+        return `(pageid:${spaceKey}:${titleOrId})`;
       }
       const pageId = resolved.get(`${spaceKey}:${titleOrId}`);
-      return pageId ? `(pageid:${pageId})` : `(page:${spaceKey}:${titleOrId})`;
+      return pageId
+        ? `(pageid:${spaceKey}:${pageId})`
+        : `(page:${spaceKey}:${titleOrId})`;
     },
   );
 }

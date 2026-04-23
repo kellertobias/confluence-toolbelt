@@ -18,6 +18,7 @@ import { commitFile, listChangedMarkdownFiles } from '../git.js';
 import { parseBlocks } from '../inline-tags.js';
 import { emitHeader, parseHeader } from '../md-header.js';
 import { blocksFromStorage } from '../sync/blocks-from-storage.js';
+import { enrichContentEntityLinks } from '../storage-dom/enrich-links.js';
 import { loadBase, writeBaseSidecar } from '../sync/base-source.js';
 import { hasUnresolvedConflicts } from '../sync/conflict.js';
 import { splitDetachedSection } from '../sync/detached.js';
@@ -35,6 +36,7 @@ export interface SyncClient {
     version: number;
   }>;
   getPageComments(pageId: string): Promise<RawComment[]>;
+  getPageSpaceKey(pageId: string): Promise<string | undefined>;
 }
 
 interface Options {
@@ -111,7 +113,10 @@ export async function syncOne(
     await client.getPageStorage(pageId);
   const comments = await client.getPageComments(pageId).catch(() => []);
 
-  const remoteBlocks: SyncBlock[] = blocksFromStorage(storageHtml, comments);
+  const enrichedHtml = await enrichContentEntityLinks(storageHtml, (id) =>
+    client.getPageSpaceKey(id),
+  );
+  const remoteBlocks: SyncBlock[] = blocksFromStorage(enrichedHtml, comments);
   const localBlocks: SyncBlock[] = parseBlocks(localContent).map((b) => ({
     nodeId: b.tag?.nodeId,
     text: b.text,

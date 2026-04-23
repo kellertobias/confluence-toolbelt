@@ -15,6 +15,7 @@ import {
   extractHeaderExtrasFromStorage,
   storageToMarkdownBlocks,
 } from '../storage-dom.js';
+import { enrichContentEntityLinks } from '../storage-dom/enrich-links.js';
 import { writeBaseSidecar } from '../sync/base-source.js';
 
 interface Options {
@@ -212,7 +213,10 @@ export async function downloadAll(opts: Options): Promise<void> {
     // Fetch inline comments to embed their contents
     const comments = await client.getPageComments(meta.id).catch(() => []);
 
-    const blocks = storageToMarkdownBlocks(storageHtml);
+    const enrichedHtml = await enrichContentEntityLinks(storageHtml, (id) =>
+      client.getPageSpaceKey(id),
+    );
+    const blocks = storageToMarkdownBlocks(enrichedHtml);
     // Join blocks and apply a final token decode pass for any durable tokens that might
     // have survived the per-block decoding (defensive against edge conversions)
     let body = blocks
@@ -457,7 +461,10 @@ async function downloadFromUrl(
   const comments = await client.getPageComments(pageId).catch(() => []);
 
   // Convert storage HTML to markdown
-  const blocks = storageToMarkdownBlocks(storageHtml);
+  const enrichedHtml = await enrichContentEntityLinks(storageHtml, (id) =>
+    client.getPageSpaceKey(id),
+  );
+  const blocks = storageToMarkdownBlocks(enrichedHtml);
   let body = blocks
     .map(
       (b) =>

@@ -74,15 +74,26 @@ export function inlineHtml(s: string): string {
   out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
     const hrefStr = String(href || "");
 
-    // Page links by ID: [text](pageid:12345) — cross-space, rename-proof
+    // Page links by ID: [text](pageid:12345) or [text](pageid:SPACE:12345)
     if (hrefStr.startsWith("pageid:")) {
-      const contentId = hrefStr.slice(7);
+      const rest = hrefStr.slice(7);
       const plainText = decodeBasicEntities(String(text));
-      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+      const colonIdx = rest.indexOf(":");
+      // pageid:SPACE:ID → ri:page with space-key + content-id
+      if (colonIdx > 0) {
+        const spaceKey = rest.slice(0, colonIdx);
+        const contentId = rest.slice(colonIdx + 1);
+        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+      }
+      // pageid:ID → ri:content-entity (no space info)
+      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(rest)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }
 
-    // Page links by title or ID: [text](page:PageTitle), [text](page:SPACE:PageTitle),
-    // or [text](page:SPACE:12345) where the last segment is an all-numeric page ID.
+    // Page links by title or ID: [text](page:PageTitle) or [text](page:SPACE:PageTitle).
+    // When the third segment is all-numeric it is treated as a page ID and
+    // stored as a content-entity (rename-proof). The space key is dropped
+    // because ri:content-entity has no space-key attribute; users who need
+    // a space-qualified ID link should use the pageid: scheme instead.
     if (hrefStr.startsWith("page:")) {
       const pageRef = hrefStr.slice(5);
       const parts = pageRef.split(":");
@@ -90,9 +101,8 @@ export function inlineHtml(s: string): string {
       if (parts.length >= 2 && parts[0]) {
         const spaceKey = parts[0];
         const titleOrId = parts.slice(1).join(":");
-        // All-numeric third segment → treat as page ID (rename-proof, cross-space)
         if (/^\d+$/.test(titleOrId)) {
-          return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+          return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
         }
         return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
       }

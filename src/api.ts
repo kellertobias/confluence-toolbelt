@@ -183,6 +183,18 @@ export class ConfluenceClient {
     return res.json();
   }
 
+  async getPageSpaceKey(pageId: string): Promise<string | undefined> {
+    try {
+      const url = this.buildV1(`/content/${pageId}`, { expand: "space" });
+      const res = await this.fetchWithDebug(url, { headers: this.headers });
+      if (!res.ok) return undefined;
+      const data = await res.json();
+      return (data?.space?.key as string | undefined) || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async getPageComments(pageId: string): Promise<any[]> {
     const url = this.buildV1(`/content/${pageId}/descendant/comment`, {
       expand: "history,version,body.view,extensions.inlineProperties,ancestors",
