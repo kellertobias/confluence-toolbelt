@@ -1,3 +1,15 @@
+## 2.0.0 (2026-04-23)
+
+* fix: improve visibility in cli ([6a2b4c9](https://github.com/kellertobias/confluence-toolbelt/commit/6a2b4c9))
+* feat: add sync cli entrypoint ([883409c](https://github.com/kellertobias/confluence-toolbelt/commit/883409c))
+* feat!: sync feature ([ab7d704](https://github.com/kellertobias/confluence-toolbelt/commit/ab7d704))
+
+
+### BREAKING CHANGE
+
+* This adds a new sidecar. Before you use sync, you must
+download your files again
+
 ## 1.15.0 (2026-04-23)
 
 * fix: infinite loop on misformed lists ([3ae942a](https://github.com/kellertobias/confluence-toolbelt/commit/3ae942a))
