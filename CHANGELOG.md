@@ -1,3 +1,7 @@
+## 2.3.0 (2026-04-23)
+
+* feat(download): improve inline comment handling ([1384095](https://github.com/kellertobias/confluence-toolbelt/commit/1384095))
+
 ## 2.2.0 (2026-04-23)
 
 * feat(confluence-links): improve page link conversion with space keys ([959c47a](https://github.com/kellertobias/confluence-toolbelt/commit/959c47a))
