@@ -13,6 +13,7 @@ import {
   extractHeaderExtrasFromStorage,
   storageToMarkdownBlocks,
 } from '../storage-dom.js';
+import { writeBaseSidecar } from '../sync/base-source.js';
 
 interface Options {
   cwd: string;
@@ -297,6 +298,15 @@ export async function downloadAll(opts: Options): Promise<void> {
       console.log(`[download] No changes for ${relPath}`);
     } else {
       fs.writeFileSync(filePath, next, 'utf8');
+      // Also refresh the sync sidecar so `sync` has a clean base to diff against.
+      try {
+        writeBaseSidecar(filePath, storageHtml ?? '');
+      } catch (err) {
+        console.warn(
+          `[download] Failed to write sync base sidecar for ${relPath}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
       console.log(`[download] Wrote ${relPath}`);
 
       /**
@@ -527,6 +537,14 @@ async function downloadFromUrl(
     console.log(`[download] No changes for ${filename}`);
   } else {
     fs.writeFileSync(filePath, next, 'utf8');
+    try {
+      writeBaseSidecar(filePath, storageHtml ?? '');
+    } catch (err) {
+      console.warn(
+        `[download] Failed to write sync base sidecar for ${filename}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     console.log(`[download] Wrote ${filename}`);
 
     /**

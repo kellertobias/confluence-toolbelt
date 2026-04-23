@@ -64,14 +64,11 @@ async function main() {
     case "upload":
       await uploadAll({ cwd: process.cwd(), args });
       break;
-    case 'sync':
-      console.log(
-        [
-          '[sync] Not yet implemented.',
-          'Planned: download current page state, show git diff, then upload.',
-          "For now, run 'download' then review diffs and run 'upload'.",
-        ].join('\n'),
-      );
+    case "sync":
+      {
+        const { syncAll } = await import("./commands/sync.js");
+        await syncAll({ cwd: process.cwd(), args });
+      }
       break;
     case "create":
       {
