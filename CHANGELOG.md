@@ -1,3 +1,7 @@
+## 2.1.0 (2026-04-23)
+
+* feat: link shortening & search ([aed6afe](https://github.com/kellertobias/confluence-toolbelt/commit/aed6afe))
+
 ## 2.0.0 (2026-04-23)
 
 * fix: improve visibility in cli ([6a2b4c9](https://github.com/kellertobias/confluence-toolbelt/commit/6a2b4c9))
