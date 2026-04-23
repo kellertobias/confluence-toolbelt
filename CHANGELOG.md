@@ -1,3 +1,8 @@
+## 2.2.0 (2026-04-23)
+
+* feat(confluence-links): improve page link conversion with space keys ([959c47a](https://github.com/kellertobias/confluence-toolbelt/commit/959c47a))
+* feat(jira): support round-trip of jira issue macro ([49ede32](https://github.com/kellertobias/confluence-toolbelt/commit/49ede32))
+
 ## <small>2.1.1 (2026-04-23)</small>
 
 * fix: deflists ([164ff4f](https://github.com/kellertobias/confluence-toolbelt/commit/164ff4f))
