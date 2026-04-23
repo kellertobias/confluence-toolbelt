@@ -1,3 +1,8 @@
+## 1.15.0 (2026-04-23)
+
+* fix: infinite loop on misformed lists ([3ae942a](https://github.com/kellertobias/confluence-toolbelt/commit/3ae942a))
+* feat: add debug feature ([d19c86c](https://github.com/kellertobias/confluence-toolbelt/commit/d19c86c))
+
 ## 1.14.0 (2026-04-22)
 
 * feat: normalize unicode dashes to ascii hyphen on upload ([12131b5](https://github.com/kellertobias/confluence-toolbelt/commit/12131b5))
