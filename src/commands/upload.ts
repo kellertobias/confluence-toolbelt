@@ -381,6 +381,7 @@ async function selectFilesInteractively(
         'Select files to upload (● = changed, ○ = unchanged | space to select, enter to confirm)',
       choices,
       initial: 0,
+      symbols: { indicator: { on: '\x1b[32m☑\x1b[0m', off: '\x1b[90m☐\x1b[0m' } },
       result(names: string[]) {
         // Ensure we return values, not names
         return names;
