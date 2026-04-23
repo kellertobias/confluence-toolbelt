@@ -1,3 +1,7 @@
+## <small>2.1.1 (2026-04-23)</small>
+
+* fix: deflists ([164ff4f](https://github.com/kellertobias/confluence-toolbelt/commit/164ff4f))
+
 ## 2.1.0 (2026-04-23)
 
 * feat: link shortening & search ([aed6afe](https://github.com/kellertobias/confluence-toolbelt/commit/aed6afe))
