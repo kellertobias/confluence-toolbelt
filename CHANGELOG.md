@@ -1,3 +1,7 @@
+## <small>2.3.1 (2026-04-23)</small>
+
+* fix(links): use ri:content-entity for pageid:SPACE:ID links ([801598b](https://github.com/kellertobias/confluence-toolbelt/commit/801598b))
+
 ## 2.3.0 (2026-04-23)
 
 * feat(download): improve inline comment handling ([1384095](https://github.com/kellertobias/confluence-toolbelt/commit/1384095))
