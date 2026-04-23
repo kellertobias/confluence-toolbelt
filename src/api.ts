@@ -197,7 +197,7 @@ export class ConfluenceClient {
 
   async getPageComments(pageId: string): Promise<any[]> {
     const url = this.buildV1(`/content/${pageId}/descendant/comment`, {
-      expand: "history,version,body.view,extensions.inlineProperties,ancestors",
+      expand: "history,version,body.view,extensions.inlineProperties,extensions.resolution,ancestors",
       limit: 100,
     });
     const res = await this.fetchWithDebug(url, { headers: this.headers });
@@ -205,7 +205,11 @@ export class ConfluenceClient {
       return [];
     }
     const data = await res.json();
-    return data.results || [];
+    const results: any[] = data.results || [];
+    // Exclude resolved inline comments — they should not appear in downloaded markdown.
+    return results.filter(
+      (c) => c.extensions?.resolution?.status !== "resolved",
+    );
   }
 
   async updatePageStorage(
