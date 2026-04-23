@@ -75,18 +75,15 @@ export function inlineHtml(s: string): string {
     const hrefStr = String(href || "");
 
     // Page links by ID: [text](pageid:12345) or [text](pageid:SPACE:12345)
+    // Always use ri:content-entity — content IDs are globally unique and
+    // ri:page does NOT support ri:content-id (Confluence silently strips it).
     if (hrefStr.startsWith("pageid:")) {
       const rest = hrefStr.slice(7);
       const plainText = decodeBasicEntities(String(text));
       const colonIdx = rest.indexOf(":");
-      // pageid:SPACE:ID → ri:page with space-key + content-id
-      if (colonIdx > 0) {
-        const spaceKey = rest.slice(0, colonIdx);
-        const contentId = rest.slice(colonIdx + 1);
-        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
-      }
-      // pageid:ID → ri:content-entity (no space info)
-      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(rest)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+      // pageid:SPACE:ID → strip space key, use content-entity with ID only
+      const contentId = colonIdx > 0 ? rest.slice(colonIdx + 1) : rest;
+      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }
 
     // Page links by title or ID: [text](page:PageTitle) or [text](page:SPACE:PageTitle).
@@ -102,7 +99,8 @@ export function inlineHtml(s: string): string {
         const spaceKey = parts[0];
         const titleOrId = parts.slice(1).join(":");
         if (/^\d+$/.test(titleOrId)) {
-          return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+          // Numeric ID → content-entity (ri:page does not support ri:content-id)
+          return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
         }
         return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
       }

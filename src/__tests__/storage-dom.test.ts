@@ -737,20 +737,22 @@ describe('storageToMarkdownBlocks', () => {
     expect(roundTripped).toContain('[Care Import TDD](pageid:42)');
   });
 
-  it('converts pageid:SPACE:ID to ri:page with space-key on upload', () => {
+  it('converts pageid:SPACE:ID to ri:content-entity on upload (space key dropped)', () => {
     const md = 'See [the doc](pageid:MYSPACE:12345) for details.';
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<ac:link>');
-    expect(html).toContain('<ri:page ri:space-key="MYSPACE" ri:content-id="12345"/>');
-    expect(html).not.toContain('ri:content-entity');
+    expect(html).toContain('<ri:content-entity ri:content-id="12345"/>');
+    // ri:page does not support ri:content-id — must use content-entity
+    expect(html).not.toContain('ri:page');
   });
 
-  it('converts legacy page:SPACE:ID (numeric ID) to ri:page with space-key on upload', () => {
+  it('converts legacy page:SPACE:ID (numeric ID) to ri:content-entity on upload', () => {
     const md = 'See [the doc](page:MYSPACE:12345) for details.';
     const html = markdownToStorageHtml(md);
     expect(html).toContain('<ac:link>');
-    expect(html).toContain('<ri:page ri:space-key="MYSPACE" ri:content-id="12345"/>');
-    expect(html).not.toContain('ri:content-entity');
+    expect(html).toContain('<ri:content-entity ri:content-id="12345"/>');
+    // ri:page does not support ri:content-id — must use content-entity
+    expect(html).not.toContain('ri:page');
   });
 
   it('does not treat page:SPACE:Title as a content-entity link', () => {
