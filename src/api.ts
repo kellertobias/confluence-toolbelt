@@ -5,7 +5,7 @@
  * download/upload/create commands.
  */
 
-import { URL } from 'node:url';
+import { URL } from "node:url";
 
 export interface ConfluenceClientOptions {
   baseUrl: string;
@@ -30,7 +30,7 @@ function buildAuthHeader(
 ): Record<string, string> {
   if (opts.email && opts.apiToken) {
     const b64 = Buffer.from(`${opts.email}:${opts.apiToken}`).toString(
-      'base64',
+      "base64",
     );
     return { Authorization: `Basic ${b64}` };
   }
@@ -46,26 +46,36 @@ export class ConfluenceClient {
   private readonly debug: boolean;
 
   constructor(opts: ConfluenceClientOptions) {
-    this.base = opts.baseUrl.replace(/\/$/, '');
+    this.base = opts.baseUrl.replace(/\/$/, "");
     this.debug = opts.debug ?? false;
     this.headers = {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+      Accept: "application/json",
+      "Content-Type": "application/json",
       ...buildAuthHeader(opts),
     };
   }
 
   private dbg(msg: string): void {
-    if (this.debug) console.log(`[debug:api] ${msg}`);
+    if (this.debug) {
+      console.log(`[debug:api] ${msg}`);
+    }
   }
 
-  private async fetchWithDebug(url: string, init: RequestInit = {}): Promise<Response> {
-    const method = (init.method ?? 'GET').toUpperCase();
-    const relPath = url.replace(this.base, '');
+  private async fetchWithDebug(
+    url: string,
+    init: RequestInit = {},
+  ): Promise<Response> {
+    const method = (init.method ?? "GET").toUpperCase();
+    const relPath = url.replace(this.base, "");
     const bodyLen = init.body ? String(init.body).length : 0;
-    this.dbg(`→ ${method} ${relPath}${bodyLen ? ` (body ${bodyLen} bytes)` : ''}`);
+    this.dbg(
+      `→ ${method} ${relPath}${bodyLen ? ` (body ${bodyLen} bytes)` : ""}`,
+    );
     const t = Date.now();
-    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(30_000),
+    });
     this.dbg(`← ${res.status} ${res.statusText} in ${Date.now() - t}ms`);
     return res;
   }
@@ -110,7 +120,7 @@ export class ConfluenceClient {
   async getPageWithUi(pageId: string): Promise<any> {
     // Try to fetch richer metadata including icon/cover if available
     const url = this.build(`/api/v2/pages/${pageId}`, {
-      expand: 'icon,coverImage',
+      expand: "icon,coverImage",
     } as any);
     const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
@@ -126,25 +136,27 @@ export class ConfluenceClient {
     spaceId?: string;
   }> {
     const url = this.build(`/api/v2/pages/${pageId}`, {
-      'body-format': 'storage',
+      "body-format": "storage",
     });
     const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
+      const body = await res.text().catch(() => "");
       throw new Error(
         `getPageStorage ${pageId} failed: ${res.status} ${res.statusText}\n${body.slice(0, 300)}`,
       );
     }
     const data: PageResponseV2 = await res.json();
-    const storageHtml = data?.body?.storage?.value ?? '';
+    const storageHtml = data?.body?.storage?.value ?? "";
     const version = data?.version?.number ?? 1;
-    this.dbg(`  page title="${data.title}" version=${version} storageHtml=${storageHtml.length} chars`);
+    this.dbg(
+      `  page title="${data.title}" version=${version} storageHtml=${storageHtml.length} chars`,
+    );
     return { title: data.title, storageHtml, version, spaceId: data.spaceId };
   }
 
   async getPageAtlasDoc(pageId: string): Promise<any | undefined> {
     const url = this.build(`/api/v2/pages/${pageId}`, {
-      'body-format': 'atlas_doc_format',
+      "body-format": "atlas_doc_format",
     });
     const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
@@ -153,7 +165,7 @@ export class ConfluenceClient {
     const data = await res.json();
     const adf = (data as any)?.body?.atlas_doc_format?.value;
     try {
-      return typeof adf === 'string' ? JSON.parse(adf) : adf;
+      return typeof adf === "string" ? JSON.parse(adf) : adf;
     } catch {
       return undefined;
     }
@@ -162,7 +174,7 @@ export class ConfluenceClient {
   async getPageV1Content(pageId: string): Promise<any | undefined> {
     const url = this.buildV1(`/content/${pageId}`, {
       expand:
-        'metadata,metadata.properties,body.storage,body.atlas_doc_format,space,version',
+        "metadata,metadata.properties,body.storage,body.atlas_doc_format,space,version",
     });
     const res = await this.fetchWithDebug(url, { headers: this.headers });
     if (!res.ok) {
@@ -173,7 +185,7 @@ export class ConfluenceClient {
 
   async getPageComments(pageId: string): Promise<any[]> {
     const url = this.buildV1(`/content/${pageId}/descendant/comment`, {
-      expand: 'history,version,body.view,extensions.inlineProperties,ancestors',
+      expand: "history,version,body.view,extensions.inlineProperties,ancestors",
       limit: 100,
     });
     const res = await this.fetchWithDebug(url, { headers: this.headers });
@@ -194,15 +206,17 @@ export class ConfluenceClient {
     const url = this.build(`/api/v2/pages/${pageId}`);
     const payload = {
       id: pageId,
-      status: 'current',
+      status: "current",
       version: { number: currentVersion + 1 },
       title,
       spaceId,
-      body: { storage: { value: nextHtml, representation: 'storage' } },
+      body: { storage: { value: nextHtml, representation: "storage" } },
     };
-    this.dbg(`  updatePageStorage pageId=${pageId} title="${title}" version=${currentVersion + 1} html=${nextHtml.length} chars`);
+    this.dbg(
+      `  updatePageStorage pageId=${pageId} title="${title}" version=${currentVersion + 1} html=${nextHtml.length} chars`,
+    );
     const res = await this.fetchWithDebug(url, {
-      method: 'PUT',
+      method: "PUT",
       headers: this.headers,
       body: JSON.stringify(payload),
     });
@@ -214,6 +228,82 @@ export class ConfluenceClient {
     }
   }
 
+  get baseUrl(): string {
+    return this.base;
+  }
+
+  /**
+   * Full-text search using CQL, restricted to pages.
+   * Returns at most `limit` results including an excerpt of matching text.
+   */
+  async searchPages(
+    query: string,
+    limit = 5,
+  ): Promise<
+    Array<{
+      id: string;
+      title: string;
+      spaceKey: string;
+      webUiPath: string;
+      excerpt: string;
+    }>
+  > {
+    const cql = `type=page AND text~"${query.replace(/"/g, '\\"')}"`;
+    const url = this.buildV1("/search", {
+      cql,
+      limit,
+      excerpt: "indexed",
+      expand: "space",
+    });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `searchPages failed: ${res.status} ${res.statusText}\n${body.slice(0, 300)}`,
+      );
+    }
+    const data = await res.json();
+    return ((data as any).results ?? []).map((r: any) => {
+      const webUiPath = String(r.url ?? r.content?._links?.webui ?? "");
+      const spaceFromPath = webUiPath.match(/\/spaces\/([^/]+)\//)?.[1] ?? "";
+      return {
+        id: String(r.content?.id ?? ""),
+        title: String(r.title ?? r.content?.title ?? ""),
+        spaceKey: String(
+          r.space?.key ?? r.content?.space?.key ?? spaceFromPath,
+        ),
+        webUiPath,
+        excerpt: String(r.excerpt ?? ""),
+      };
+    });
+  }
+
+  /**
+   * Look up a page by space key and title. Returns null if not found.
+   * Used during download to resolve title-based page links to stable IDs.
+   */
+  async getPageByTitle(
+    spaceKey: string,
+    title: string,
+  ): Promise<{ id: string; title: string } | null> {
+    const url = this.buildV1("/content", {
+      type: "page",
+      spaceKey,
+      title,
+      expand: "version",
+    });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
+    if (!res.ok) {
+      return null;
+    }
+    const data = await res.json();
+    const result = data?.results?.[0];
+    if (!result) {
+      return null;
+    }
+    return { id: String(result.id), title: String(result.title) };
+  }
+
   async createPage(
     spaceId: string,
     title: string,
@@ -223,13 +313,13 @@ export class ConfluenceClient {
     const payload: any = {
       spaceId,
       title,
-      body: { storage: { value: '<p></p>', representation: 'storage' } },
+      body: { storage: { value: "<p></p>", representation: "storage" } },
     };
     if (parentId) {
       payload.parentId = parentId;
     }
     const res = await this.fetchWithDebug(url, {
-      method: 'POST',
+      method: "POST",
       headers: this.headers,
       body: JSON.stringify(payload),
     });
@@ -245,9 +335,9 @@ export class ConfluenceClient {
 
 export function fromEnv(debug = false): ConfluenceClient {
   const baseUrl =
-    process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '';
+    process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || "";
   if (!baseUrl) {
-    throw new Error('CONFLUENCE_BASE_URL (or CONFLUENCE_URL) must be set');
+    throw new Error("CONFLUENCE_BASE_URL (or CONFLUENCE_URL) must be set");
   }
   return new ConfluenceClient({
     baseUrl,

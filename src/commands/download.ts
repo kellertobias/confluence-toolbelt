@@ -7,7 +7,9 @@ import path from 'node:path';
 import { fromEnv } from '../api.js';
 import { commitFile } from '../git.js';
 import { emitTag } from '../inline-tags.js';
+import { resolveConfluencePageUrls } from '../local-links.js';
 import { emitHeader, parseHeader } from '../md-header.js';
+import { loadPageCache, resolvePageTitleLinks, savePageCache } from '../page-cache.js';
 import {
   detectUnsupportedFeatures,
   extractHeaderExtrasFromStorage,
@@ -71,6 +73,7 @@ export async function downloadAll(opts: Options): Promise<void> {
   const force = opts.args?.includes('--force');
   const verbose = opts.args?.includes('--verbose');
   const client = fromEnv();
+  const pageCache = loadPageCache(opts.cwd);
 
   // Extract non-flag arguments (potential URLs or file paths)
   const urlArgs = (opts.args || []).filter((a) => !a.startsWith('--'));
@@ -107,8 +110,8 @@ export async function downloadAll(opts: Options): Promise<void> {
           verbose: verbose || false,
           client,
           customPath: secondArg,
+          pageCache,
         });
-        return;
       } else {
         // One or more URLs without custom paths
         const urlsToDownload = urlArgs.filter((arg) => {
@@ -120,10 +123,12 @@ export async function downloadAll(opts: Options): Promise<void> {
             force: force || false,
             verbose: verbose || false,
             client,
+            pageCache,
           });
         }
-        return;
       }
+      savePageCache(opts.cwd, pageCache);
+      return;
     }
   }
 
@@ -274,6 +279,11 @@ export async function downloadAll(opts: Options): Promise<void> {
       }
     }
 
+    // Normalise Confluence URLs and title-based links to stable pageid: references.
+    const baseUrl = process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '';
+    body = resolveConfluencePageUrls(body, baseUrl);
+    body = await resolvePageTitleLinks(body, client, pageCache);
+
     // Preserve optional header fields (emoji/status/image/readonly) from existing file header if present
     const existingText = fs.existsSync(filePath)
       ? fs.readFileSync(filePath, 'utf8')
@@ -329,6 +339,8 @@ export async function downloadAll(opts: Options): Promise<void> {
       await commitFile(opts.cwd, filePath);
     }
   }
+
+  savePageCache(opts.cwd, pageCache);
 }
 
 /**
@@ -346,9 +358,9 @@ export async function downloadAll(opts: Options): Promise<void> {
 async function downloadFromUrl(
   cwd: string,
   urlOrPageId: string,
-  opts: { force: boolean; verbose: boolean; client: any; customPath?: string },
+  opts: { force: boolean; verbose: boolean; client: any; customPath?: string; pageCache: import('../page-cache.js').PageCache },
 ): Promise<void> {
-  const { force, verbose, client, customPath } = opts;
+  const { force, verbose, client, customPath, pageCache } = opts;
 
   // Extract pageId from URL or use directly if it's already a pageId
   let pageId: string | null = null;
@@ -508,6 +520,11 @@ async function downloadFromUrl(
       body = body.split(tag).join(`${tag}${threadTags}`);
     }
   }
+
+  // Normalise Confluence URLs and title-based links to stable pageid: references.
+  const baseUrl = process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '';
+  body = resolveConfluencePageUrls(body, baseUrl);
+  body = await resolvePageTitleLinks(body, client, pageCache);
 
   // Check if file already exists to preserve READONLY flag
   const existingText = fs.existsSync(filePath)

@@ -8,8 +8,9 @@ import enquirer from 'enquirer';
 import { fromEnv } from '../api.js';
 import { commitFile, listChangedMarkdownFiles } from '../git.js';
 import { parseBlocks } from '../inline-tags.js';
-import { resolveLocalPageLinks } from '../local-links.js';
+import { findUnparsedConfluenceLinks, resolveConfluencePageUrls, resolveLocalPageLinks } from '../local-links.js';
 import { parseHeader } from '../md-header.js';
+import { loadPageCache, savePageCache, validatePageLinks } from '../page-cache.js';
 import { markdownToStorageHtml, replaceNodesById } from '../storage-dom.js';
 
 const { prompt } = enquirer;
@@ -137,6 +138,8 @@ export async function uploadAll(opts: Options): Promise<void> {
     return;
   }
 
+  const pageCache = loadPageCache(opts.cwd);
+
   for (const file of files) {
     const rel = path.relative(opts.cwd, file);
     dbg(`--- processing ${rel} ---`);
@@ -172,7 +175,20 @@ export async function uploadAll(opts: Options): Promise<void> {
     dbg(`effectiveTitle="${effectiveTitle ?? ''}"`);
 
     let resolvedBody = resolveLocalPageLinks(body, file, opts.cwd);
+    const baseUrl = process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '';
+    resolvedBody = resolveConfluencePageUrls(resolvedBody, baseUrl);
     dbg(`after link resolution: ${resolvedBody.length} chars`);
+
+    // Warn about links that look like Confluence URLs but couldn't be parsed.
+    for (const href of findUnparsedConfluenceLinks(resolvedBody, baseUrl)) {
+      console.warn(`⚠️  [link-check] ${rel}: unrecognised Confluence URL → ${href}`);
+    }
+
+    // Warn about page IDs that don't exist in Confluence (uses .pages.json cache).
+    const missingWarnings = await validatePageLinks(resolvedBody, client, pageCache);
+    for (const w of missingWarnings) {
+      console.warn(`⚠️  [link-check] ${rel}: ${w}`);
+    }
 
     // Strip injected inline comment contents so they don't get uploaded as text
     resolvedBody = resolvedBody.replace(/<!--\s*#[\s\S]*?-->/g, '');
@@ -330,6 +346,8 @@ export async function uploadAll(opts: Options): Promise<void> {
     await commitFile(opts.cwd, file);
     dbg(`done with ${rel}`);
   }
+
+  savePageCache(opts.cwd, pageCache);
 }
 
 /**

@@ -41,6 +41,12 @@ function printHelp() {
       '  cli create child   <src.md> <new.md> [--title "..."]',
       "                                              #   Create page as a child of <src.md>",
       "  cli task                                    # Create a Jira task (reads .env defaults)",
+      "  cli search <query> [--results n] [--preview [n]] [--show-links] [--json]",
+      "                                              #   Search Confluence pages:",
+      "                                              #     --results n  : max results (default 5)",
+      "                                              #     --preview [n]: show n lines of excerpt (default 5)",
+      "                                              #     --show-links : print full URL instead of hyperlinking",
+      "                                              #     --json       : output as JSON",
       "",
       "Env:",
       "  CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN",
@@ -80,6 +86,12 @@ async function main() {
       {
         const { createTask } = await import("./commands/task.js");
         await createTask({ cwd: process.cwd() });
+      }
+      break;
+    case "search":
+      {
+        const { searchPages } = await import("./commands/search.js");
+        await searchPages({ cwd: process.cwd(), args });
       }
       break;
     default:

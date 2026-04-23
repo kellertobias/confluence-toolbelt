@@ -81,15 +81,20 @@ export function inlineHtml(s: string): string {
       return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }
 
-    // Page links by title: [text](page:PageTitle) or [text](page:SPACE:PageTitle)
+    // Page links by title or ID: [text](page:PageTitle), [text](page:SPACE:PageTitle),
+    // or [text](page:SPACE:12345) where the last segment is an all-numeric page ID.
     if (hrefStr.startsWith("page:")) {
       const pageRef = hrefStr.slice(5);
       const parts = pageRef.split(":");
       const plainText = decodeBasicEntities(String(text));
       if (parts.length >= 2 && parts[0]) {
         const spaceKey = parts[0];
-        const contentTitle = parts.slice(1).join(":");
-        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(contentTitle)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+        const titleOrId = parts.slice(1).join(":");
+        // All-numeric third segment → treat as page ID (rename-proof, cross-space)
+        if (/^\d+$/.test(titleOrId)) {
+          return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+        }
+        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
       }
       return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }

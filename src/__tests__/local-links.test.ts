@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveLocalPageLinks } from '../local-links.js';
+import { findUnparsedConfluenceLinks, resolveConfluencePageUrls, resolveLocalPageLinks } from '../local-links.js';
 
 const TMP = path.join(import.meta.dirname ?? __dirname, '.tmp-local-links');
 
@@ -168,5 +168,100 @@ describe('resolveLocalPageLinks', () => {
     );
 
     expect(result).toBe('[CWD](pageid:55)');
+  });
+});
+
+describe('resolveConfluencePageUrls', () => {
+  const BASE = 'https://mycompany.atlassian.net';
+
+  it('converts a full Confluence page URL to pageid: format', () => {
+    const result = resolveConfluencePageUrls(
+      '[My Page](https://mycompany.atlassian.net/wiki/spaces/MYSPACE/pages/12345/My-Page)',
+      BASE,
+    );
+    expect(result).toBe('[My Page](pageid:12345)');
+  });
+
+  it('works when the URL has no trailing title segment', () => {
+    const result = resolveConfluencePageUrls(
+      '[My Page](https://mycompany.atlassian.net/wiki/spaces/MYSPACE/pages/12345)',
+      BASE,
+    );
+    expect(result).toBe('[My Page](pageid:12345)');
+  });
+
+  it('handles http:// URLs', () => {
+    const result = resolveConfluencePageUrls(
+      '[Page](http://mycompany.atlassian.net/wiki/spaces/SP/pages/99)',
+      BASE,
+    );
+    expect(result).toBe('[Page](pageid:99)');
+  });
+
+  it('ignores URLs from a different host', () => {
+    const md = '[External](https://other.atlassian.net/wiki/spaces/SP/pages/99/Title)';
+    expect(resolveConfluencePageUrls(md, BASE)).toBe(md);
+  });
+
+  it('ignores non-page URLs on the same host', () => {
+    const md = '[Blog](https://mycompany.atlassian.net/blog/2024)';
+    expect(resolveConfluencePageUrls(md, BASE)).toBe(md);
+  });
+
+  it('converts multiple links in one body', () => {
+    const result = resolveConfluencePageUrls(
+      'See [A](https://mycompany.atlassian.net/wiki/spaces/SP/pages/1/A) and [B](https://mycompany.atlassian.net/wiki/spaces/SP/pages/2/B)',
+      BASE,
+    );
+    expect(result).toBe('See [A](pageid:1) and [B](pageid:2)');
+  });
+
+  it('returns the original markdown when baseUrl is empty', () => {
+    const md = '[Page](https://mycompany.atlassian.net/wiki/spaces/SP/pages/1)';
+    expect(resolveConfluencePageUrls(md, '')).toBe(md);
+  });
+
+  it('handles baseUrl that already includes /wiki path', () => {
+    const result = resolveConfluencePageUrls(
+      '[Page](https://mycompany.atlassian.net/wiki/spaces/SP/pages/42/Title)',
+      'https://mycompany.atlassian.net/wiki',
+    );
+    expect(result).toBe('[Page](pageid:42)');
+  });
+});
+
+describe('findUnparsedConfluenceLinks', () => {
+  const BASE = 'https://mycompany.atlassian.net';
+
+  it('returns links on the Confluence host that were not converted to page:SPACE:ID', () => {
+    const md = '[Blog](https://mycompany.atlassian.net/blog/2024/article)';
+    expect(findUnparsedConfluenceLinks(md, BASE)).toEqual([
+      'https://mycompany.atlassian.net/blog/2024/article',
+    ]);
+  });
+
+  it('does not flag already-converted page:SPACE:ID links', () => {
+    const md = '[Doc](page:SP:123)';
+    expect(findUnparsedConfluenceLinks(md, BASE)).toHaveLength(0);
+  });
+
+  it('does not flag pageid: links', () => {
+    const md = '[Doc](pageid:123)';
+    expect(findUnparsedConfluenceLinks(md, BASE)).toHaveLength(0);
+  });
+
+  it('does not flag URLs from other hosts', () => {
+    const md = '[External](https://other.atlassian.net/wiki/spaces/SP/pages/99)';
+    expect(findUnparsedConfluenceLinks(md, BASE)).toHaveLength(0);
+  });
+
+  it('returns empty array when baseUrl is empty', () => {
+    const md = '[Blog](https://mycompany.atlassian.net/blog/post)';
+    expect(findUnparsedConfluenceLinks(md, '')).toHaveLength(0);
+  });
+
+  it('returns multiple unparsed links', () => {
+    const md = '[A](https://mycompany.atlassian.net/search) [B](https://mycompany.atlassian.net/profile)';
+    expect(findUnparsedConfluenceLinks(md, BASE)).toHaveLength(2);
   });
 });

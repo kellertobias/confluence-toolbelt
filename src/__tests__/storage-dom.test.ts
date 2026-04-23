@@ -684,6 +684,23 @@ describe('storageToMarkdownBlocks', () => {
       .join('\n');
     expect(roundTripped).toContain('[Care Import TDD](pageid:42)');
   });
+
+  it('converts page:SPACE:ID (numeric ID) to ri:content-entity on upload', () => {
+    const md = 'See [the doc](page:MYSPACE:12345) for details.';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:link>');
+    expect(html).toContain('<ri:content-entity ri:content-id="12345"/>');
+    expect(html).not.toContain('ri:page');
+  });
+
+  it('does not treat page:SPACE:Title as a content-entity link', () => {
+    const md = 'See [the doc](page:MYSPACE:My Page Title).';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ri:page');
+    expect(html).toContain('ri:space-key="MYSPACE"');
+    expect(html).toContain('ri:content-title="My Page Title"');
+    expect(html).not.toContain('ri:content-entity');
+  });
 });
 
 describe('table config (layout and column widths)', () => {
