@@ -35,6 +35,19 @@ export function normalizeMacros(html: string): string {
     },
   );
 
+  // Inline Jira issue macro → durable link token.
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']jira["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (_m, inner) => {
+      const keyParam = inner.match(
+        /<ac:parameter[^>]*\bac:name=["']key["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+      );
+      const key = (keyParam?.[1] || "").replace(/<[^>]+>/g, "").trim();
+      if (!key) return "";
+      return `MD_JIRA_LINK~~${encodeURIComponent(key)}~~END`;
+    },
+  );
+
   /**
    * Convert Confluence `<ac:link>` elements to tokens or markdown.
    *

@@ -646,6 +646,40 @@ describe('storageToMarkdownBlocks', () => {
     );
   });
 
+  it('converts Jira issue macro to jira: link on download', () => {
+    const html = `
+      <p>
+        See <ac:structured-macro ac:name="jira">
+          <ac:parameter ac:name="key">PROJ-123</ac:parameter>
+        </ac:structured-macro> for details.
+      </p>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    expect(md).toContain('[PROJ-123](jira:PROJ-123)');
+  });
+
+  it('converts jira: link back to Jira macro on upload', () => {
+    const md = 'See [PROJ-123](jira:PROJ-123) for details.';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="jira">');
+    expect(html).toContain('<ac:parameter ac:name="key">PROJ-123</ac:parameter>');
+  });
+
+  it('round-trips Jira issue links without data loss', () => {
+    const originalHtml = `
+      <p>See <ac:structured-macro ac:name="jira"><ac:parameter ac:name="key">API-42</ac:parameter></ac:structured-macro> for info.</p>
+    `;
+    const md = storageToMarkdownBlocks(originalHtml)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('[API-42](jira:API-42)');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="jira">');
+    expect(html).toContain('<ac:parameter ac:name="key">API-42</ac:parameter>');
+  });
+
   it('converts pageid: links to ri:content-entity on upload', () => {
     const md = 'See [the TDD](pageid:12345) for details.';
     const html = markdownToStorageHtml(md);
@@ -1436,14 +1470,14 @@ describe('detectUnsupportedFeatures', () => {
     expect(unsupported).not.toContain('expand/collapse sections');
   });
 
-  it('detects Jira integration macros', () => {
+  it('does not flag Jira issue macros as unsupported (they round-trip)', () => {
     const html = `
       <ac:structured-macro ac:name="jira">
         <ac:parameter ac:name="key">PROJ-123</ac:parameter>
       </ac:structured-macro>
     `;
     const unsupported = detectUnsupportedFeatures(html);
-    expect(unsupported).toContain('Jira issue integration');
+    expect(unsupported).not.toContain('Jira issue integration');
   });
 
   it('detects merged table cells (colspan)', () => {
@@ -1576,8 +1610,8 @@ describe('detectUnsupportedFeatures', () => {
         <ac:rich-text-body>
           <ac:structured-macro ac:name="column">
             <ac:rich-text-body>
-              <ac:structured-macro ac:name="jira">
-                <ac:parameter ac:name="key">TEST-1</ac:parameter>
+              <ac:structured-macro ac:name="include">
+                <ac:parameter ac:name="pageTitle">Other</ac:parameter>
               </ac:structured-macro>
             </ac:rich-text-body>
           </ac:structured-macro>
@@ -1591,7 +1625,7 @@ describe('detectUnsupportedFeatures', () => {
     const unsupported = detectUnsupportedFeatures(html);
     expect(unsupported.length).toBeGreaterThan(1);
     expect(unsupported).toContain('multi-column layout');
-    expect(unsupported).toContain('Jira issue integration');
+    expect(unsupported).toContain('page include');
     expect(unsupported).toContain('merged table cells');
   });
 });

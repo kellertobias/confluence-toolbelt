@@ -109,6 +109,12 @@ export function inlineHtml(s: string): string {
       return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
     }
 
+    // Jira issue links: [PROJ-123](jira:PROJ-123)
+    if (hrefStr.startsWith("jira:")) {
+      const key = hrefStr.slice(5);
+      return `<ac:structured-macro ac:name="jira"><ac:parameter ac:name="key">${escapeHtml(key)}</ac:parameter></ac:structured-macro>`;
+    }
+
     // Attachment links: [text](#attachment:filename.pdf)
     if (hrefStr.startsWith("#attachment:")) {
       const filename = hrefStr.slice(12);

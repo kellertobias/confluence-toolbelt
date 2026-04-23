@@ -57,10 +57,6 @@ const CHECKS: FeatureCheck[] = [
     test: (html) => hasStructuredMacro(html, ["excerpt", "excerpt-include"]),
   },
   {
-    label: "Jira issue integration",
-    test: (html) => hasStructuredMacro(html, ["jira"]),
-  },
-  {
     label: "page include",
     test: (html) => hasStructuredMacro(html, ["include"]),
   },

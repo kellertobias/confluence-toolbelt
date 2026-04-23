@@ -210,6 +210,14 @@ export function decodeMdCommentTokens(s: string): string {
         return `<!-- status:${color}:${title} -->`;
       },
     )
+    // Jira issue link tokens → markdown links
+    .replace(
+      /MD(?:\\)?_JIRA(?:\\)?_LINK~~([^~]+)~~END/g,
+      (_m, keyEnc) => {
+        const key = decodeURIComponent(String(keyEnc || ""));
+        return `[${key}](jira:${key})`;
+      },
+    )
     .replace(
       /MD(?:\\)?_IMAGE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
       (_m, refEnc, capEnc) => {
