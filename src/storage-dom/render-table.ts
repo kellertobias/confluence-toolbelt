@@ -113,11 +113,13 @@ export function renderDefListMarkdown(tableEl: Element): string {
     const keyHtml = String((cells[0] as any).innerHTML || '');
     const valueHtml = String((cells[1] as any).innerHTML || '');
 
-    const key = decodeBasicEntities(
-      keyHtml
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<[^>]+>/g, '')
-        .trim(),
+    const key = decodeMdCommentTokens(
+      decodeBasicEntities(
+        keyHtml
+          .replace(/<!--[\s\S]*?-->/g, '')
+          .replace(/<[^>]+>/g, '')
+          .trim(),
+      ),
     );
 
     const valueText = extractMultilineCellText(valueHtml);

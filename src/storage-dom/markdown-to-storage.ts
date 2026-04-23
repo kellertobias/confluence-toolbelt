@@ -10,7 +10,7 @@
 
 import { deflateSync } from "node:zlib";
 
-import { escapeHtml, escapeRegExp } from "./html-utils.js";
+import { decodeBasicEntities, escapeHtml, escapeRegExp } from "./html-utils.js";
 import { inlineHtml } from "./inline-html.js";
 import { TABLE_WIDTH_PX } from "./table-layout.js";
 import {
@@ -39,7 +39,11 @@ const DEFLIST_COMMENT_RE = /^\s*<!--\s*deflist\s+(.+?)\s*-->\s*$/i;
  * Inline HTML comments inside table cells are preserved as-is.
  */
 export function markdownToStorageHtml(md: string, debug = false): string {
-  const dbg = (msg: string) => { if (debug) console.log(`[debug:md] ${msg}`); };
+  const dbg = (msg: string) => {
+    if (debug) {
+      console.log(`[debug:md] ${msg}`);
+    }
+  };
   const lines = md.split(/\r?\n/);
   dbg(`converting ${lines.length} lines`);
   const out: string[] = [];
@@ -263,7 +267,9 @@ export function markdownToStorageHtml(md: string, debug = false): string {
       para.push(lines[i] || "");
       i++;
     }
-    dbg(`  → paragraph (${para.length} lines), calling inlineWithTokens on ${para.join(" ").trim().length} chars`);
+    dbg(
+      `  → paragraph (${para.length} lines), calling inlineWithTokens on ${para.join(" ").trim().length} chars`,
+    );
     out.push(`<p>${inlineWithTokens(para.join(" ").trim())}</p>`);
     dbg(`  ✓ paragraph done`);
   }
@@ -760,6 +766,17 @@ function consumeReqList(
   }
 
   parts.push("</tbody></table>");
+
+  // Append a hidden expand macro that marks this table as a req-list.
+  // Confluence strips custom data-* attributes on save, so normalizeMacros
+  // detects this marker on download and re-injects data-req-table="true".
+  parts.push(
+    `<ac:structured-macro ac:name="expand">` +
+      `<ac:parameter ac:name="title">req-table</ac:parameter>` +
+      `<ac:rich-text-body><p></p></ac:rich-text-body>` +
+      `</ac:structured-macro>`,
+  );
+
   return { html: parts.join(""), nextIndex: i };
 }
 
@@ -799,15 +816,65 @@ function parseDeflistAttributes(input: string): Record<string, string> {
  * data-deflist-columns="...">` so the download path can reconstruct the
  * original bullet list format.
  */
+/**
+ * Parse one deflist bullet line using balanced parenthesis counting.
+ *
+ * The key may itself contain `(...)` groups (e.g. markdown links
+ * `[text](page:SPACE:id)` or terms like `Overview (SN, 2026)`) without
+ * breaking the match, because we track depth rather than relying on a regex
+ * that stops at the first `)`.
+ */
+function parseDeflistLine(
+  line: string,
+  prefixRe: RegExp,
+): { key: string; value: string } | null {
+  const prefixMatch = line.match(prefixRe);
+  if (!prefixMatch) {
+    return null;
+  }
+
+  const keyStart = prefixMatch[0].length; // index right after the opening `(`
+  let depth = 1;
+  let j = keyStart;
+
+  while (j < line.length) {
+    const ch = line[j];
+    if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        break;
+      }
+    }
+    j++;
+  }
+
+  if (depth !== 0) {
+    return null; // unbalanced — not a valid deflist item
+  }
+  // line[j] is the matching `)` for the opening `(` after KEYWORD.
+  // The very next character must be `:`.
+  if (line[j + 1] !== ":") {
+    return null;
+  }
+
+  const key = line.slice(keyStart, j).trim();
+  const value = line.slice(j + 2).replace(/^\s*/, ""); // skip `: `
+  return { key, value };
+}
+
 function consumeDefList(
   lines: string[],
   start: number,
   keyword: string,
   columns: string[],
 ): { html: string; nextIndex: number } | null {
-  const keywordRe = new RegExp(
-    `^\\s*[-*]\\s+${escapeRegExp(keyword)}\\s*\\(([^)]*)\\):\\s*(.*)$`,
-  );
+  // Prefix regex matches up to and including the opening `(` of the key.
+  // Key extraction then counts balanced parentheses so that keys containing
+  // `)` (e.g. markdown links `[text](page:SPACE:id)` or phrases like
+  // `(SN, 2026)`) are captured correctly.
+  const prefixRe = new RegExp(`^\\s*[-*]\\s+${escapeRegExp(keyword)}\\s*\\(`);
   const items: { key: string; value: string }[] = [];
   let i = start;
 
@@ -817,12 +884,12 @@ function consumeDefList(
       i++;
       continue;
     }
-    const match = line.match(keywordRe);
-    if (!match) {
+    const parsed = parseDeflistLine(line, prefixRe);
+    if (!parsed) {
       break;
     }
-    const key = (match[1] || "").trim();
-    let value = (match[2] || "").trim();
+    const key = parsed.key;
+    let value = parsed.value;
     i++;
 
     // Consume indented continuation lines (e.g. multi-line definitions).
@@ -860,14 +927,30 @@ function consumeDefList(
   ];
 
   for (const item of items) {
+    // Use inlineHtml so keys can contain markdown links and inline formatting.
+    // Decode HTML entities first so `&amp;` in markdown becomes `&` on the
+    // page rather than being double-escaped to `&amp;amp;`.
     const keyCell = item.key
-      ? `<p>${escapeHtml(item.key)}</p>`
+      ? `<p>${inlineHtml(decodeBasicEntities(item.key))}</p>`
       : "";
     const valueCell = cellHtml(item.value);
     parts.push(`<tr><td>${keyCell}</td><td>${valueCell}</td></tr>`);
   }
 
   parts.push("</tbody></table>");
+
+  // Append a hidden expand macro that stores the deflist keyword and column
+  // names. Confluence strips custom data-* attributes on save, so this is the
+  // only way to survive a round-trip. normalizeMacros detects this marker on
+  // download and re-injects the data-* attributes before DOM parsing.
+  const configPayload = `${escapeHtml(keyword)}:${escapeHtml(columnsAttr)}`;
+  parts.push(
+    `<ac:structured-macro ac:name="expand">` +
+      `<ac:parameter ac:name="title">deflist-config</ac:parameter>` +
+      `<ac:rich-text-body><p>${configPayload}</p></ac:rich-text-body>` +
+      `</ac:structured-macro>`,
+  );
+
   return { html: parts.join(""), nextIndex: i };
 }
 

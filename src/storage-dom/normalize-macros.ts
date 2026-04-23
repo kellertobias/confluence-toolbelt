@@ -76,6 +76,48 @@ export function normalizeMacros(html: string): string {
     /<!--\s*mermaid:([A-Za-z0-9+/=]+)\s*-->\s*<ac:image\b[^>]*>[\s\S]*?<\/ac:image>/gi,
     (_m, encoded) => `MD_MERMAID(${encoded})`,
   );
+  // Deflist config: table immediately followed by an expand macro whose title
+  // is "deflist-config" → re-inject data-deflist-* attributes and consume the
+  // macro. This round-trips the deflist metadata that Confluence strips from
+  // custom data-* attributes on save.
+  out = out.replace(
+    /(<table\b[^>]*>[\s\S]*?<\/table>)\s*<ac:structured-macro\b[^>]*\bac:name=["']expand["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (fullMatch, tableHtml: string, macroInner: string) => {
+      const title = (
+        macroInner.match(
+          /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim();
+
+      if (title === "req-table") {
+        return tableHtml.replace(/^<table\b/, '<table data-req-table="true"');
+      }
+
+      if (title === "deflist-config") {
+        const body = (
+          macroInner.match(
+            /<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
+          )?.[1] || ""
+        )
+          .replace(/<[^>]+>/g, "")
+          .trim();
+        // body format: "KEYWORD:Col1,Col2"
+        const colonIdx = body.indexOf(":");
+        if (colonIdx < 0) return fullMatch;
+        const keyword = body.slice(0, colonIdx).trim();
+        const columnsStr = body.slice(colonIdx + 1).trim();
+        return tableHtml.replace(
+          /^<table\b/,
+          `<table data-deflist="true" data-deflist-keyword="${keyword}" data-deflist-columns="${columnsStr}"`,
+        );
+      }
+
+      return fullMatch;
+    },
+  );
+
   // New mermaid: expand macro with "Mermaid" in title → extract source as
   // MD_MERMAID token.
   out = out.replace(

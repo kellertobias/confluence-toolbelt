@@ -1100,6 +1100,34 @@ describe('nREQ rejected requirement rows', () => {
   });
 });
 
+describe('req-table Confluence round-trip', () => {
+  it('emits a req-table expand macro so the marker survives Confluence stripping data-* attrs', () => {
+    const md = [
+      '- REQ(F1, MUST): The system MUST support auth.',
+      '- nREQ(F2, SHOULD): SSO SHOULD be supported.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="expand">');
+    expect(html).toContain('<ac:parameter ac:name="title">req-table</ac:parameter>');
+  });
+
+  it('round-trips a req-list after Confluence strips data-req-table attribute', () => {
+    const original = [
+      '- REQ(F1, MUST): The system MUST support auth.',
+      '- nREQ(F2, SHOULD): SSO SHOULD be supported.',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    // Simulate Confluence stripping the data-req-table attribute
+    const stripped = html.replace(/\s+data-req-table="true"/, '');
+    expect(stripped).not.toContain('data-req-table');
+    const md = storageToMarkdownBlocks(stripped)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('- REQ(F1, MUST):');
+    expect(md).toContain('- nREQ(F2, SHOULD):');
+  });
+});
+
 describe('definition lists (deflist)', () => {
   it('uploads a deflist comment + bullet items as a Confluence table', () => {
     const md = [
@@ -1229,6 +1257,103 @@ describe('definition lists (deflist)', () => {
     const html = markdownToStorageHtml(md);
     expect(html).toContain('data-deflist="true"');
     expect(html).toContain('<h2>Next section</h2>');
+  });
+
+  it('emits a deflist-config expand macro so the config survives Confluence stripping data-* attrs', () => {
+    const md = [
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+      '- ROLE(Owner): Alice',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="expand">');
+    expect(html).toContain('<ac:parameter ac:name="title">deflist-config</ac:parameter>');
+    expect(html).toContain('<p>ROLE:Role,Name</p>');
+  });
+
+  it('round-trips after Confluence strips data-* attributes (via expand macro)', () => {
+    const original = [
+      '<!-- deflist keyword="ROLE" columns=Role,Name -->',
+      '- ROLE(Owner/Writer): Tobias S. Keller',
+      '- ROLE(Product Manager):',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    // Simulate Confluence stripping the data-* attributes from the table tag
+    const stripped = html
+      .replace(/\s+data-deflist="true"/, '')
+      .replace(/\s+data-deflist-keyword="[^"]*"/, '')
+      .replace(/\s+data-deflist-columns="[^"]*"/, '');
+    expect(stripped).not.toContain('data-deflist');
+    const md = storageToMarkdownBlocks(stripped)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- deflist keyword="ROLE" columns=Role,Name -->');
+    expect(md).toContain('- ROLE(Owner/Writer): Tobias S. Keller');
+    expect(md).toContain('- ROLE(Product Manager):');
+  });
+
+  it('handles markdown links in keys (link contains closing paren)', () => {
+    const md = [
+      '<!-- deflist keyword="Doc" columns=Document,Relevance -->',
+      '- Doc([TDD - Care Independence Strategy](page:E:5292327446)): Previous strategy doc.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // Key cell should contain a Confluence page link, not literal bracket text
+    expect(html).toContain('<ac:link>');
+    expect(html).toContain('TDD - Care Independence Strategy');
+    // Round-trip
+    const md2 = storageToMarkdownBlocks(html).map((b) => b.markdown).join('\n');
+    expect(md2).toContain('<!-- deflist keyword="Doc" columns=Document,Relevance -->');
+    expect(md2).toContain('[TDD - Care Independence Strategy](');
+    expect(md2).toContain('Previous strategy doc.');
+  });
+
+  it('is not confused when the value also contains ):', () => {
+    const md = [
+      '<!-- deflist keyword="Doc" columns=Document,Relevance -->',
+      '- Doc(Key): Value with ): tricky text.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<p>Key</p>');
+    expect(html).toContain('Value with ): tricky text.');
+  });
+
+  it('handles keys containing inner parentheses like (SN, 2026)', () => {
+    const md = [
+      '<!-- deflist keyword="Doc" columns=Document,Relevance -->',
+      '- Doc(EPOS Gateway - System Overview (SN, 2026)): Updated 2026 mirror.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('EPOS Gateway - System Overview (SN, 2026)');
+    const md2 = storageToMarkdownBlocks(html).map((b) => b.markdown).join('\n');
+    expect(md2).toContain('- Doc(EPOS Gateway - System Overview (SN, 2026)): Updated 2026 mirror.');
+  });
+
+  it('does not double-encode HTML entities in keys (&amp; stays as & on the page)', () => {
+    const md = [
+      '<!-- deflist keyword="Doc" columns=Document,Relevance -->',
+      '- Doc(Overview &amp; Guide): Description.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // Should be &amp; in storage (displays as & on Confluence), NOT &amp;amp;
+    expect(html).toContain('Overview &amp; Guide');
+    expect(html).not.toContain('&amp;amp;');
+  });
+
+  it('round-trips quoted column names with spaces after Confluence strips data-* attributes', () => {
+    const original = [
+      '<!-- deflist keyword="FIELD" columns="Field Name,Value" -->',
+      '- FIELD(Project): Confluence Tools',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    const stripped = html
+      .replace(/\s+data-deflist="true"/, '')
+      .replace(/\s+data-deflist-keyword="[^"]*"/, '')
+      .replace(/\s+data-deflist-columns="[^"]*"/, '');
+    const md = storageToMarkdownBlocks(stripped)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- deflist keyword="FIELD" columns="Field Name,Value" -->');
+    expect(md).toContain('- FIELD(Project): Confluence Tools');
   });
 });
 
