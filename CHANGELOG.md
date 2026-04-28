@@ -1,3 +1,7 @@
+## 2.4.0 (2026-04-28)
+
+* feat: list to table feature ([469615a](https://github.com/kellertobias/confluence-toolbelt/commit/469615a))
+
 ## <small>2.3.1 (2026-04-23)</small>
 
 * fix(links): use ri:content-entity for pageid:SPACE:ID links ([801598b](https://github.com/kellertobias/confluence-toolbelt/commit/801598b))
