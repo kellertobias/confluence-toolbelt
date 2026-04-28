@@ -29,6 +29,8 @@ const REQ_VERB_TOKEN = "MDREQVERBTOK";
  * and quoting (quoted vs. unquoted) varies in practice.
  */
 const DEFLIST_COMMENT_RE = /^\s*<!--\s*deflist\s+(.+?)\s*-->\s*$/i;
+const LIST_TABLE_START_RE = /^\s*<!--\s*list-table\s+(.+?)\s*-->\s*$/i;
+const LIST_TABLE_END_RE = /^\s*<!--\s*\/list-table\s*-->\s*$/i;
 
 /**
  * Convert Markdown to Confluence storage HTML.
@@ -199,6 +201,21 @@ export function markdownToStorageHtml(md: string, debug = false): string {
       }
     }
 
+    // List tables: `<!-- list-table columns=... spacing=... -->` ... `<!-- /list-table -->
+    const listTableComment = line.match(LIST_TABLE_START_RE);
+    if (listTableComment) {
+      dbg(`  → list-table`);
+      const attrs = parseListTableAttributes(listTableComment[1] || "");
+      if (attrs.columns.length > 0) {
+        const result = consumeListTable(lines, i, attrs);
+        if (result) {
+          out.push(result.html);
+          i = result.nextIndex;
+          continue;
+        }
+      }
+    }
+
     // Unordered lists (- or *).
     if (/^\s*[-*]\s+/.test(line)) {
       dbg(`  → unordered list`);
@@ -311,6 +328,12 @@ function startsNewBlock(lines: string[], i: number): boolean {
     return true;
   }
   if (DEFLIST_COMMENT_RE.test(line)) {
+    return true;
+  }
+  if (LIST_TABLE_START_RE.test(line)) {
+    return true;
+  }
+  if (LIST_TABLE_END_RE.test(line)) {
     return true;
   }
   if (looksLikeTableHeader(lines, i)) {
@@ -1055,4 +1078,325 @@ function consumeListAtIndent(
   }
 
   return { html: `<ul>${items.join("")}</ul>`, nextIndex: i };
+}
+
+// ---------------------------------------------------------------------------
+// List tables
+// ---------------------------------------------------------------------------
+
+interface ListTableColumn {
+  key: string;
+  header: string;
+}
+
+interface ListTableRow {
+  merge?: string[][];
+  cells: Record<string, string>;
+  isList: Record<string, boolean>;
+}
+
+function parseListTableAttributes(
+  input: string,
+): { columns: ListTableColumn[]; spacing?: number[] } {
+  const result: { columns: ListTableColumn[]; spacing?: number[] } = {
+    columns: [],
+  };
+
+  // Extract spacing first so it doesn't interfere with column parsing.
+  const spacingMatch = input.match(/spacing\s*=\s*([\d,]+)/i);
+  if (spacingMatch) {
+    result.spacing = spacingMatch[1]!
+      .split(",")
+      .map(Number)
+      .filter((n: number) => !Number.isNaN(n) && n > 0);
+  }
+
+  // Remove spacing clause from input.
+  const withoutSpacing = input
+    .replace(/spacing\s*=\s*[\d,]+\s*/i, "")
+    .trim();
+
+  // Extract the columns=... attribute.
+  const columnsMatch = withoutSpacing.match(/^columns\s*=\s*(.+)$/i);
+  const colsPart = columnsMatch ? columnsMatch[1]!.trim() : "";
+
+  // Match key:"Value" pairs. Keys are identifiers, values are quoted.
+  // Accepts both `=` and `:` as separators for robustness.
+  const colRegex = /([a-zA-Z_]\w*)\s*[:=]\s*"([^"]*)"/g;
+  let m;
+  while ((m = colRegex.exec(colsPart)) !== null) {
+    result.columns.push({ key: m[1]!.trim(), header: m[2]!.trim() });
+  }
+
+  return result;
+}
+
+function consumeListTable(
+  lines: string[],
+  start: number,
+  attrs: { columns: ListTableColumn[]; spacing?: number[] },
+): { html: string; nextIndex: number } | null {
+  const columnKeys = attrs.columns.map((c) => c.key);
+  const colCount = columnKeys.length;
+
+  const rows: ListTableRow[] = [];
+  let i = start + 1; // skip the <!-- list-table --> comment
+
+  while (i < lines.length) {
+    const line = lines[i] || "";
+
+    if (LIST_TABLE_END_RE.test(line)) {
+      i++;
+      break;
+    }
+
+    if (/^\s*$/.test(line)) {
+      i++;
+      continue;
+    }
+
+    if (/^\s*---\s*$/.test(line)) {
+      i++;
+      continue;
+    }
+
+    const row: ListTableRow = { cells: {}, isList: {} };
+
+    // Collect all merge directives at the start of a row.
+    while (i < lines.length) {
+      const mergeMatch = (lines[i] || "").match(
+        /^\s*merge\s*\(\s*([^)]+)\s*\)\s*$/,
+      );
+      if (!mergeMatch) {
+        break;
+      }
+      const group = mergeMatch[1]!
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean);
+      if (!row.merge) {
+        row.merge = [];
+      }
+      row.merge.push(group);
+      i++;
+    }
+
+    // Skip blank lines after merge directives.
+    while (i < lines.length && /^\s*$/.test(lines[i] || "")) {
+      i++;
+    }
+
+    // Parse key-value pairs until row separator or end.
+    while (i < lines.length) {
+      const currentLine = lines[i] || "";
+
+      if (
+        /^\s*$/.test(currentLine) ||
+        /^\s*---\s*$/.test(currentLine) ||
+        LIST_TABLE_END_RE.test(currentLine)
+      ) {
+        break;
+      }
+
+      const kvMatch = currentLine.match(
+        /^\s*([a-zA-Z_]\w*)\s*:(.*)$/,
+      );
+      if (!kvMatch) {
+        i++;
+        continue;
+      }
+
+      const key = kvMatch[1]!;
+      let value = kvMatch[2]!.replace(/^\s*/, "");
+      i++;
+
+      // Empty inline value: look for following list or continuation lines.
+      if (!value) {
+        // Skip at most one blank line before list/continuation.
+        if (i < lines.length && /^\s*$/.test(lines[i] || "")) {
+          i++;
+        }
+
+        // Check for indented list items.
+        const listItems: string[] = [];
+        while (i < lines.length) {
+          const next = lines[i] || "";
+          if (
+            /^\s*$/.test(next) ||
+            /^\s*---\s*$/.test(next) ||
+            LIST_TABLE_END_RE.test(next)
+          ) {
+            break;
+          }
+          const listMatch = next.match(/^\s*[-*]\s+(.*)$/);
+          if (!listMatch) break;
+          listItems.push(listMatch[1]!);
+          i++;
+        }
+
+        if (listItems.length > 0) {
+          row.isList[key] = true;
+          row.cells[key] = listItems.join("\\n");
+        } else {
+          // Indented continuation lines (non-list, non-key).
+          const continuations: string[] = [];
+          while (i < lines.length) {
+            const next = lines[i] || "";
+            if (
+              /^\s*$/.test(next) ||
+              /^\s*---\s*$/.test(next) ||
+              LIST_TABLE_END_RE.test(next)
+            ) {
+              break;
+            }
+            if (/^\s*([a-zA-Z_]\w*)\s*:/.test(next)) break;
+            if (/^\s*merge\s*\(/.test(next)) break;
+            continuations.push(next.trim());
+            i++;
+          }
+          row.cells[key] = continuations.join("\\n");
+        }
+      } else {
+        // Value provided on same line; collect continuation lines.
+        const continuations: string[] = [];
+        while (i < lines.length) {
+          const next = lines[i] || "";
+          if (
+            /^\s*$/.test(next) ||
+            /^\s*---\s*$/.test(next) ||
+            LIST_TABLE_END_RE.test(next)
+          ) {
+            break;
+          }
+          if (/^\s*([a-zA-Z_]\w*)\s*:/.test(next)) break;
+          if (/^\s*merge\s*\(/.test(next)) break;
+          continuations.push(next.trim());
+          i++;
+        }
+        row.cells[key] = [value, ...continuations]
+          .filter((s: string) => s !== "")
+          .join("\\n");
+      }
+    }
+
+    rows.push(row);
+  }
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  // Build config payload for the hidden expand macro.
+  const configPayload = attrs.columns
+    .map((c) => `${c.key}:${c.header}`)
+    .join(",");
+  const spacingPayload = attrs.spacing ? attrs.spacing.join(",") : "";
+  const expandPayload = spacingPayload
+    ? `${configPayload}|${spacingPayload}`
+    : configPayload;
+
+  const parts: string[] = [];
+  parts.push(
+    `<table data-list-table="true" data-list-table-config="${escapeHtml(configPayload)}"${spacingPayload ? ` data-list-table-spacing="${escapeHtml(spacingPayload)}"` : ""}>`,
+  );
+
+  if (attrs.spacing && attrs.spacing.length > 0) {
+    parts.push("<colgroup>");
+    for (const sp of attrs.spacing) {
+      parts.push(`<col style="width: ${sp * 100}px;" />`);
+    }
+    parts.push("</colgroup>");
+  }
+
+  parts.push("<thead><tr>");
+  for (const col of attrs.columns) {
+    parts.push(`<th><p>${escapeHtml(col.header)}</p></th>`);
+  }
+  parts.push("</tr></thead>");
+
+  parts.push("<tbody>");
+  for (const row of rows) {
+    // Build a map from column key -> merge group index for this row.
+    const keyToMergeGroup = new Map<string, number>();
+    if (row.merge) {
+      for (let g = 0; g < row.merge.length; g++) {
+        for (const k of row.merge[g]!) {
+          keyToMergeGroup.set(k, g);
+        }
+      }
+    }
+
+    if (row.merge && row.merge.length > 0) {
+      // Store merge info on the row so download can recover it.
+      const mergeAttr = row.merge.map((g) => g.join(",")).join("|");
+      parts.push(`<tr data-list-table-merge="${escapeHtml(mergeAttr)}">`);
+    } else {
+      parts.push("<tr>");
+    }
+
+    let colIdx = 0;
+    while (colIdx < colCount) {
+      const colKey = columnKeys[colIdx]!;
+      const mergeGroupIdx = keyToMergeGroup.get(colKey);
+      if (mergeGroupIdx !== undefined) {
+        const group = row.merge![mergeGroupIdx]!;
+        // Span covers all columns the group touches, based on column declaration order.
+        const indices = group.map((k: string) => columnKeys.indexOf(k));
+        const minIdx = Math.min(...indices);
+        const maxIdx = Math.max(...indices);
+        const span = maxIdx - minIdx + 1;
+
+        // Use the first merged column that actually has a value.
+        let value = "";
+        let isList = false;
+        for (const mk of group) {
+          if (row.cells[mk]) {
+            value = row.cells[mk];
+            isList = !!row.isList[mk];
+            break;
+          }
+        }
+        let cellContent: string;
+        if (isList) {
+          const items = value.split("\\n").filter((s: string) => s !== "");
+          cellContent =
+            `<ul>${items.map((item: string) => `<li><p>${inlineWithTokens(item)}</p></li>`).join("")}</ul>`;
+        } else {
+          cellContent = cellHtml(value);
+        }
+        if (span > 1) {
+          parts.push(`<td colspan="${span}">${cellContent}</td>`);
+        } else {
+          parts.push(`<td>${cellContent}</td>`);
+        }
+        colIdx += span;
+      } else {
+        const value = row.cells[colKey] || "";
+        const isList = row.isList[colKey];
+        let cellContent: string;
+        if (isList) {
+          const items = value.split("\\n").filter((s: string) => s !== "");
+          cellContent =
+            `<ul>${items.map((item: string) => `<li><p>${inlineWithTokens(item)}</p></li>`).join("")}</ul>`;
+        } else {
+          cellContent = cellHtml(value);
+        }
+        parts.push(`<td>${cellContent}</td>`);
+        colIdx++;
+      }
+    }
+
+    parts.push("</tr>");
+  }
+  parts.push("</tbody></table>");
+
+  // Hidden expand macro so config survives Confluence stripping data-* attrs.
+  parts.push(
+    `<ac:structured-macro ac:name="expand">` +
+      `<ac:parameter ac:name="title">list-table-config</ac:parameter>` +
+      `<ac:rich-text-body><p>${escapeHtml(expandPayload)}</p></ac:rich-text-body>` +
+      `</ac:structured-macro>`,
+  );
+
+  return { html: parts.join(""), nextIndex: i };
 }

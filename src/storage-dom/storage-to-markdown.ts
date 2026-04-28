@@ -10,6 +10,7 @@ import { unescapeMarkdownUnderscores } from "./markdown-escapes.js";
 import { normalizeMacros } from "./normalize-macros.js";
 import {
   renderDefListMarkdown,
+  renderListTableMarkdown,
   renderReqListMarkdown,
   renderTableMarkdown,
   replaceTableTokens,
@@ -109,11 +110,18 @@ function isDefinitionListTable(el: Element): boolean {
   return (el as any).getAttribute?.("data-deflist") === "true";
 }
 
+function isListTable(el: Element): boolean {
+  return (el as any).getAttribute?.("data-list-table") === "true";
+}
+
 /**
  * Dispatch a table element to the appropriate markdown renderer based on the
  * data attributes the upload path adds to each variant.
  */
 function renderTableVariant(el: Element): string {
+  if (isListTable(el)) {
+    return renderListTableMarkdown(el);
+  }
   if (isDefinitionListTable(el)) {
     return renderDefListMarkdown(el);
   }

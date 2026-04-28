@@ -127,6 +127,25 @@ export function normalizeMacros(html: string): string {
         );
       }
 
+      if (title === "list-table-config") {
+        const body = (
+          macroInner.match(
+            /<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
+          )?.[1] || ""
+        )
+          .replace(/<[^>]+>/g, "")
+          .trim();
+        // body format: "key:Header,key2:Header2|spacing1,spacing2" or "key:Header,key2:Header2"
+        const pipeIdx = body.indexOf("|");
+        const configPart = pipeIdx >= 0 ? body.slice(0, pipeIdx).trim() : body;
+        const spacingPart = pipeIdx >= 0 ? body.slice(pipeIdx + 1).trim() : "";
+        let attrs = `data-list-table="true" data-list-table-config="${configPart}"`;
+        if (spacingPart) {
+          attrs += ` data-list-table-spacing="${spacingPart}"`;
+        }
+        return tableHtml.replace(/^<table\b/, `<table ${attrs}`);
+      }
+
       return fullMatch;
     },
   );

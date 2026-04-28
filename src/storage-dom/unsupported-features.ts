@@ -48,7 +48,7 @@ const CHECKS: FeatureCheck[] = [
         )
           .replace(/<[^>]+>/g, "")
           .trim();
-        return !/mermaid/i.test(title) && title !== "deflist-config" && title !== "req-table";
+        return !/mermaid/i.test(title) && title !== "deflist-config" && title !== "req-table" && title !== "list-table-config";
       });
     },
   },
@@ -75,7 +75,16 @@ const CHECKS: FeatureCheck[] = [
   },
   {
     label: "merged table cells",
-    test: (html) => /<t[hd]\b[^>]*\b(?:colspan|rowspan)=["']?[2-9]/i.test(html),
+    test: (html) => {
+      // Remove list-table blocks so their intentional merges don't trigger the warning.
+      const withoutListTables = html.replace(
+        /<table\b[^>]*\bdata-list-table\s*=\s*["']true["'][^>]*>[\s\S]*?<\/table>/gi,
+        "",
+      );
+      return /<t[hd]\b[^>]*\b(?:colspan|rowspan)=["']?[2-9]/i.test(
+        withoutListTables,
+      );
+    },
   },
   {
     label: "charts/diagrams",

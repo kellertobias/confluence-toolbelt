@@ -140,6 +140,189 @@ export function renderDefListMarkdown(tableEl: Element): string {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// List tables
+// ---------------------------------------------------------------------------
+
+interface ListTableCellValue {
+  type: "text" | "multiline" | "list";
+  text: string;
+  items: string[];
+}
+
+function extractListTableCellValue(html: string): ListTableCellValue {
+  const stripped = html.replace(/<!--[\s\S]*?-->/g, "");
+
+  const ulMatch = stripped.match(/<ul\b[^>]*>([\s\S]*?)<\/ul>/i);
+  if (ulMatch) {
+    const items: string[] = [];
+    const liRegex = /<li\b[^>]*>([\s\S]*?)<\/li>/gi;
+    let m;
+    while ((m = liRegex.exec(ulMatch[1]!)) !== null) {
+      let itemHtml = m[1]!;
+      itemHtml = itemHtml.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "$1");
+      let text = itemHtml.replace(/<[^>]+>/g, "");
+      text = decodeBasicEntities(text).trim();
+      items.push(text);
+    }
+    return { type: "list", text: "", items };
+  }
+
+  let text = stripped
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h\d)>/gi, "\n");
+  text = text.replace(/<[^>]+>/g, "");
+  text = decodeBasicEntities(text);
+  text = text.replace(/\\n/g, "\n");
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(
+      (l, idx, arr) => !(l === "" && (idx === 0 || idx === arr.length - 1)),
+    );
+
+  if (lines.length > 1) {
+    return { type: "multiline", text: lines.join("\n"), items: [] };
+  }
+  return { type: "text", text: lines.join("\n"), items: [] };
+}
+
+/**
+ * Convert a data-list-table back to a list-table comment + key-value rows.
+ */
+export function renderListTableMarkdown(tableEl: Element): string {
+  const getAttr = (name: string): string =>
+    (tableEl as any).getAttribute?.(name) || "";
+  const configAttr = getAttr("data-list-table-config");
+  const spacingAttr = getAttr("data-list-table-spacing");
+
+  const columns: { key: string; header: string }[] = [];
+  const colRegex = /([^:,]+):([^,]*)/g;
+  let m;
+  while ((m = colRegex.exec(configAttr)) !== null) {
+    columns.push({ key: m[1]!.trim(), header: m[2]!.trim() });
+  }
+
+  const spacing = spacingAttr
+    ? spacingAttr.split(",").map(Number).filter((n: number) => !Number.isNaN(n) && n > 0)
+    : [];
+
+  if (columns.length === 0) {
+    return "";
+  }
+
+  const colParts = columns.map((c) => `${c.key}:"${c.header}"`);
+  const spacingPart = spacing.length > 0 ? ` spacing=${spacing.join(",")}` : "";
+  const configLine = `<!-- list-table columns=${colParts.join(",")}${spacingPart} -->`;
+
+  const rows = Array.from(tableEl.querySelectorAll("tbody tr")) as Element[];
+  const fallbackRows =
+    rows.length === 0
+      ? (Array.from(tableEl.querySelectorAll("tr")) as Element[]).filter(
+          (r) => (r.querySelector("td") as Element | null) !== null,
+        )
+      : rows;
+
+  const lines: string[] = [configLine];
+
+  for (const row of fallbackRows) {
+    const cells = Array.from(
+      (row as any).querySelectorAll("th,td"),
+    ) as Element[];
+
+    const mergeAttr =
+      (row as any).getAttribute?.("data-list-table-merge") || "";
+    // Parse merge groups: "a,b|c,d,e" → [["a","b"],["c","d","e"]]
+    const mergeGroups: string[][] = mergeAttr
+      ? mergeAttr.split("|").map((g: string) =>
+          g
+            .split(",")
+            .map((s: string) => s.trim())
+            .filter(Boolean),
+        )
+      : [];
+
+    if (mergeGroups.length > 0) {
+      for (const group of mergeGroups) {
+        lines.push(`merge(${group.join(", ")})`);
+      }
+      lines.push("");
+      // Emit each merged cell under its group's first key.
+      for (let cellIdx = 0; cellIdx < cells.length && cellIdx < mergeGroups.length; cellIdx++) {
+        const group = mergeGroups[cellIdx]!;
+        const cellValue = extractListTableCellValue(
+          String((cells[cellIdx] as any).innerHTML || ""),
+        );
+        const firstKey = group[0]!;
+        if (cellValue.type === "list" && cellValue.items.length > 0) {
+          lines.push(`${firstKey}:`);
+          for (const item of cellValue.items) {
+            lines.push(`  - ${item}`);
+          }
+        } else if (
+          cellValue.type === "multiline" &&
+          cellValue.text.includes("\n")
+        ) {
+          const valueLines = cellValue.text.split("\n");
+          lines.push(`${firstKey}: ${valueLines[0]}`);
+          for (let j = 1; j < valueLines.length; j++) {
+            lines.push(`  ${valueLines[j]}`);
+          }
+        } else {
+          lines.push(`${firstKey}: ${cellValue.text}`);
+        }
+      }
+    } else {
+      // Regular row: emit each known column that has a corresponding cell.
+      for (let i = 0; i < cells.length && i < columns.length; i++) {
+        const cellValue = extractListTableCellValue(
+          String((cells[i] as any).innerHTML || ""),
+        );
+        // Skip completely empty cells so the markdown stays clean.
+        const isEmpty =
+          (cellValue.type === "list" && cellValue.items.length === 0) ||
+          ((cellValue.type === "text" || cellValue.type === "multiline") &&
+            cellValue.text.trim() === "");
+        if (isEmpty) {
+          continue;
+        }
+        const colKey = columns[i]!.key;
+        if (cellValue.type === "list" && cellValue.items.length > 0) {
+          lines.push(`${colKey}:`);
+          for (const item of cellValue.items) {
+            lines.push(`  - ${item}`);
+          }
+        } else if (
+          cellValue.type === "multiline" &&
+          cellValue.text.includes("\n")
+        ) {
+          const valueLines = cellValue.text.split("\n");
+          lines.push(`${colKey}: ${valueLines[0]}`);
+          for (let j = 1; j < valueLines.length; j++) {
+            lines.push(`  ${valueLines[j]}`);
+          }
+        } else {
+          lines.push(`${colKey}: ${cellValue.text}`);
+        }
+      }
+    }
+
+    lines.push("---");
+  }
+
+  // Trim trailing separators and blank lines.
+  while (
+    lines.length > 0 &&
+    (lines[lines.length - 1]! === "---" || lines[lines.length - 1]!.trim() === "")
+  ) {
+    lines.pop();
+  }
+
+  lines.push("<!-- /list-table -->");
+
+  return lines.join("\n");
+}
+
 /**
  * Convert an HTML cell body into plain text, mapping `<br/>` (and a few other
  * block boundaries) to actual newlines so we can split multi-line values back

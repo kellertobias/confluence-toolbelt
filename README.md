@@ -351,6 +351,66 @@ The `keyword` attribute selects which bullet items belong to the list (items not
 
 On **upload**, the list becomes a `<table data-deflist="true" data-deflist-keyword="..." data-deflist-columns="...">` element. On **download**, the tool detects the marker and reconstructs the original comment and bullet list format.
 
+### List Tables
+
+An alternative table representation that uses key-value rows instead of pipe-delimited cells. This is useful when columns have different content types (lists, long text) or when you want a more readable row-oriented format in markdown.
+
+```markdown
+<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit",characteristics:"Characteristics",amountStudents:"Amount Students" spacing=1,2,2,5 -->
+
+programFamily: FS
+businessUnit: Distance Learning
+amountStudents: 140.000
+characteristics:
+  - Mainly Managed in EPOS
+  - use MyCampus
+  - Write online Exams
+
+---
+
+programFamily: EU
+businessUnit: Distance Learning
+amountStudents: 40.000
+characteristics:
+  - Online Students
+  - Mainly Managed in EPOS
+  - use MyCampus
+  - Write online Exams
+
+<!-- /list-table -->
+```
+
+- The `columns=` attribute defines each column with `key:"Header Label"`. Keys are used in rows to assign values; headers appear in the Confluence table.
+- `spacing=` (optional) sets relative column widths, e.g. `spacing=1,2,2,5`.
+- Rows are separated by `---`.
+- Each row lists `key: value` pairs. The order within a row does not matter — keys determine which column the value belongs to.
+- List values are written as indented `- item` bullets under an empty `key:` line.
+- Multi-line text values are supported via indented continuation lines.
+
+**Merged cells** are supported with a `merge(...)` directive at the start of a row:
+
+```markdown
+<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit",characteristics:"Characteristics",amountStudents:"Amount Students" -->
+
+merge(programFamily,businessUnit,amountStudents,characteristics)
+
+businessUnit: Distance Learning
+
+---
+
+programFamily: FS
+businessUnit: Distance Learning
+amountStudents: 140.000
+characteristics:
+  - Mainly Managed in EPOS
+
+<!-- /list-table -->
+```
+
+This produces a single merged cell spanning all four columns for the first row.
+
+On **upload**, the block becomes a Confluence `<table>` with `data-list-table` markers and a hidden expand macro so the configuration survives Confluence's data-* attribute stripping. On **download**, the table is reconstructed back into the original comment + key-value format.
+
 ### Table Width and Column Configuration
 
 You can control the overall table width and individual column proportions by placing a `<!-- table:LAYOUT [SHARES] -->` comment directly before the table:

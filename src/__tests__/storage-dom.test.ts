@@ -1419,6 +1419,255 @@ describe('definition lists (deflist)', () => {
   });
 });
 
+describe('list tables', () => {
+  it('uploads a list-table comment + rows as a Confluence table', () => {
+    const md = [
+      '<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit",characteristics:"Characteristics",amountStudents:"Amount Students" spacing=1,2,2,5 -->',
+      'programFamily: FS',
+      'businessUnit: Distance Learning',
+      'amountStudents: 140.000',
+      'characteristics:',
+      '  - Mainly Managed in EPOS',
+      '  - use MyCampus',
+      '  - Write online Exams',
+      '',
+      '---',
+      '',
+      'programFamily: EU',
+      'businessUnit: Distance Learning',
+      'amountStudents: 40.000',
+      'characteristics:',
+      '  - Online Students',
+      '  - Mainly Managed in EPOS',
+      '  - use MyCampus',
+      '  - Write online Exams',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-list-table="true"');
+    expect(html).toContain('data-list-table-config="programFamily:Program Family,businessUnit:Business Unit,characteristics:Characteristics,amountStudents:Amount Students"');
+    expect(html).toContain('data-list-table-spacing="1,2,2,5"');
+    expect(html).toContain('<th><p>Program Family</p></th>');
+    expect(html).toContain('<th><p>Business Unit</p></th>');
+    expect(html).toContain('<th><p>Characteristics</p></th>');
+    expect(html).toContain('<th><p>Amount Students</p></th>');
+    expect(html).toContain('<td><p>FS</p></td>');
+    expect(html).toContain('<td><p>Distance Learning</p></td>');
+    expect(html).toContain('<td><ul><li><p>Mainly Managed in EPOS</p></li>');
+    expect(html).toContain('<td><p>EU</p></td>');
+    expect(html).toContain('<td><p>40.000</p></td>');
+  });
+
+  it('downloads a list-table back to comment + key-value rows', () => {
+    const html = `
+      <table data-list-table="true" data-list-table-config="programFamily:Program Family,businessUnit:Business Unit,characteristics:Characteristics,amountStudents:Amount Students" data-list-table-spacing="1,2,2,5">
+        <colgroup><col style="width: 100px;" /><col style="width: 200px;" /><col style="width: 200px;" /><col style="width: 500px;" /></colgroup>
+        <thead><tr><th><p>Program Family</p></th><th><p>Business Unit</p></th><th><p>Characteristics</p></th><th><p>Amount Students</p></th></tr></thead>
+        <tbody>
+          <tr><td><p>FS</p></td><td><p>Distance Learning</p></td><td><ul><li><p>Mainly Managed in EPOS</p></li><li><p>use MyCampus</p></li><li><p>Write online Exams</p></li></ul></td><td><p>140.000</p></td></tr>
+          <tr><td><p>EU</p></td><td><p>Distance Learning</p></td><td><ul><li><p>Online Students</p></li><li><p>Mainly Managed in EPOS</p></li><li><p>use MyCampus</p></li><li><p>Write online Exams</p></li></ul></td><td><p>40.000</p></td></tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit",characteristics:"Characteristics",amountStudents:"Amount Students" spacing=1,2,2,5 -->');
+    expect(md).toContain('programFamily: FS');
+    expect(md).toContain('businessUnit: Distance Learning');
+    expect(md).toContain('characteristics:');
+    expect(md).toContain('  - Mainly Managed in EPOS');
+    expect(md).toContain('amountStudents: 140.000');
+    expect(md).toContain('programFamily: EU');
+    expect(md).toContain('<!-- /list-table -->');
+  });
+
+  it('round-trips a list-table through storage HTML without data loss', () => {
+    const original = [
+      '<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit" -->',
+      'programFamily: FS',
+      'businessUnit: Distance Learning',
+      '',
+      '---',
+      '',
+      'programFamily: EU',
+      'businessUnit: Distance Learning',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    const md = storageToMarkdownBlocks(`<div>${html}</div>`)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit" -->');
+    expect(md).toContain('programFamily: FS');
+    expect(md).toContain('businessUnit: Distance Learning');
+    expect(md).toContain('programFamily: EU');
+    expect(md).toContain('<!-- /list-table -->');
+  });
+
+  it('supports merge directives for merged cells', () => {
+    const md = [
+      '<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit",characteristics:"Characteristics",amountStudents:"Amount Students" -->',
+      'merge(programFamily,businessUnit,amountStudents,characteristics)',
+      '',
+      'businessUnit: Distance Learning',
+      '',
+      '---',
+      '',
+      'programFamily: FS',
+      'businessUnit: Distance Learning',
+      'amountStudents: 140.000',
+      'characteristics:',
+      '  - Mainly Managed in EPOS',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('colspan="4"');
+    expect(html).toContain('data-list-table-merge="programFamily,businessUnit,amountStudents,characteristics"');
+    expect(html).toContain('<td colspan="4"><p>Distance Learning</p></td>');
+  });
+
+  it('downloads merged list-table rows back to merge directives', () => {
+    const html = `
+      <table data-list-table="true" data-list-table-config="programFamily:Program Family,businessUnit:Business Unit,characteristics:Characteristics,amountStudents:Amount Students">
+        <thead><tr><th><p>Program Family</p></th><th><p>Business Unit</p></th><th><p>Characteristics</p></th><th><p>Amount Students</p></th></tr></thead>
+        <tbody>
+          <tr data-list-table-merge="programFamily,businessUnit,amountStudents,characteristics">
+            <td colspan="4"><p>Distance Learning</p></td>
+          </tr>
+          <tr><td><p>FS</p></td><td><p>Distance Learning</p></td><td><p>Managed in EPOS</p></td><td><p>140.000</p></td></tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('merge(programFamily, businessUnit, amountStudents, characteristics)');
+    expect(md).toContain('programFamily: Distance Learning');
+    expect(md).toContain('programFamily: FS');
+  });
+
+  it('supports multiple merge groups in a single row', () => {
+    const md = [
+      '<!-- list-table columns=unit:"Unit",family:"Program Family",desc:"Description",pattern:"Identification Pattern",systems:"Managing Systems" spacing=1,1,4,2,2 -->',
+      'merge(unit, family)',
+      'merge(desc, pattern, systems)',
+      '',
+      'unit: Distance Learning (Online DACH)',
+      'desc: Distance Learning. Take online exams in Pebblepad, Turnitin, eAssassment; Self-Enrol into classes. Fixed scripts.',
+      '',
+      '---',
+      '',
+      'family: FS',
+      'pattern: Starting with `FS` and not including `OI`',
+      'systems: ~80% Managed in EPOS, some still in CARE, MyCampus, Syntea, CuMo 1 + PIM',
+      'desc: For students residing in germany',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-list-table-merge="unit,family|desc,pattern,systems"');
+    expect(html).toContain('<td colspan="2"><p>Distance Learning (Online DACH)</p></td>');
+    expect(html).toContain('<td colspan="3"><p>Distance Learning. Take online exams in Pebblepad, Turnitin, eAssassment; Self-Enrol into classes. Fixed scripts.</p></td>');
+  });
+
+  it('downloads multiple merge groups back to separate merge directives', () => {
+    const html = `
+      <table data-list-table="true" data-list-table-config="unit:Unit,family:Program Family,desc:Description,pattern:Identification Pattern,systems:Managing Systems">
+        <thead><tr><th><p>Unit</p></th><th><p>Program Family</p></th><th><p>Description</p></th><th><p>Identification Pattern</p></th><th><p>Managing Systems</p></th></tr></thead>
+        <tbody>
+          <tr data-list-table-merge="unit,family|desc,pattern,systems">
+            <td colspan="2"><p>Distance Learning (Online DACH)</p></td>
+            <td colspan="3"><p>Distance Learning. Take online exams in Pebblepad, Turnitin, eAssassment; Self-Enrol into classes. Fixed scripts.</p></td>
+          </tr>
+          <tr><td></td><td><p>FS</p></td><td><p>For students residing in germany</p></td><td><p>Standard FS programs</p></td><td><p>Managed in EPOS</p></td></tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('merge(unit, family)');
+    expect(md).toContain('merge(desc, pattern, systems)');
+    expect(md).toContain('unit: Distance Learning (Online DACH)');
+    expect(md).toContain('desc: Distance Learning. Take online exams');
+    expect(md).toContain('family: FS');
+  });
+
+  it('emits a list-table-config expand macro for round-trip survival', () => {
+    const md = [
+      '<!-- list-table columns=a:"A" -->',
+      'a: 1',
+      '<!-- /list-table -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="expand">');
+    expect(html).toContain('<ac:parameter ac:name="title">list-table-config</ac:parameter>');
+  });
+
+  it('round-trips after Confluence strips data-* attributes (via expand macro)', () => {
+    const original = [
+      '<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit" -->',
+      'programFamily: FS',
+      'businessUnit: Distance Learning',
+      '',
+      '---',
+      '',
+      'programFamily: EU',
+      'businessUnit: Distance Learning',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(original);
+    const stripped = html
+      .replace(/\s+data-list-table="true"/, '')
+      .replace(/\s+data-list-table-config="[^"]*"/, '')
+      .replace(/\s+data-list-table-spacing="[^"]*"/, '');
+    expect(stripped).not.toContain('data-list-table');
+    const md = storageToMarkdownBlocks(stripped)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('<!-- list-table columns=programFamily:"Program Family",businessUnit:"Business Unit" -->');
+    expect(md).toContain('programFamily: FS');
+    expect(md).toContain('businessUnit: Distance Learning');
+    expect(md).toContain('programFamily: EU');
+    expect(md).toContain('<!-- /list-table -->');
+  });
+
+  it('supports multi-line values via indented continuation lines', () => {
+    const md = [
+      '<!-- list-table columns=field:"Field",value:"Value" -->',
+      'field: Name',
+      'value: First line',
+      '  second line',
+      '  third line',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('First line<br/>second line<br/>third line');
+  });
+
+  it('does not swallow unrelated content after a list-table block', () => {
+    const md = [
+      '<!-- list-table columns=a:"A" -->',
+      'a: 1',
+      '<!-- /list-table -->',
+      '',
+      '## Next section',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-list-table="true"');
+    expect(html).toContain('<h2>Next section</h2>');
+  });
+});
+
 describe('detectUnsupportedFeatures', () => {
   it('detects multi-column layouts (section/column macros)', () => {
     const html = `
@@ -1510,6 +1759,17 @@ describe('detectUnsupportedFeatures', () => {
     `;
     const unsupported = detectUnsupportedFeatures(html);
     expect(unsupported).toContain('merged table cells');
+  });
+
+  it('does not flag merged cells in list-tables as unsupported', () => {
+    const html = `
+      <table data-list-table="true" data-list-table-config="a:A,b:B">
+        <tr><td colspan="2"><p>Merged</p></td></tr>
+        <tr><td><p>A</p></td><td><p>B</p></td></tr>
+      </table>
+    `;
+    const unsupported = detectUnsupportedFeatures(html);
+    expect(unsupported).not.toContain('merged table cells');
   });
 
   it('detects chart and diagram macros', () => {
