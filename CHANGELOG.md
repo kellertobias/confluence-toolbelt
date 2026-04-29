@@ -1,3 +1,7 @@
+## 2.5.0 (2026-04-29)
+
+* feat: allow explicit closing tags for toc macros ([0f8f4f0](https://github.com/kellertobias/confluence-toolbelt/commit/0f8f4f0))
+
 ## <small>2.4.1 (2026-04-29)</small>
 
 * fix: preserve blank lines as paragraph breaks in table cells ([6972cbe](https://github.com/kellertobias/confluence-toolbelt/commit/6972cbe))
