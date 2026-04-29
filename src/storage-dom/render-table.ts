@@ -231,7 +231,7 @@ export function renderListTableMarkdown(tableEl: Element): string {
     const mergeAttr =
       (row as any).getAttribute?.("data-list-table-merge") || "";
     // Parse merge groups: "a,b|c,d,e" → [["a","b"],["c","d","e"]]
-    const mergeGroups: string[][] = mergeAttr
+    let mergeGroups: string[][] = mergeAttr
       ? mergeAttr.split("|").map((g: string) =>
           g
             .split(",")
@@ -240,69 +240,94 @@ export function renderListTableMarkdown(tableEl: Element): string {
         )
       : [];
 
+    // Fallback: infer merge groups from actual colspan attributes when the
+    // data attribute is absent (e.g. table was edited in Confluence UI).
+    if (mergeGroups.length === 0) {
+      let colIdx = 0;
+      for (const cell of cells) {
+        if (colIdx >= columns.length) break;
+        const span =
+          parseInt(
+            (cell as any).getAttribute?.("colspan") || "1",
+            10,
+          ) || 1;
+        if (span > 1) {
+          const group: string[] = [];
+          for (
+            let s = 0;
+            s < span && colIdx + s < columns.length;
+            s++
+          ) {
+            group.push(columns[colIdx + s]!.key);
+          }
+          mergeGroups.push(group);
+        }
+        colIdx += span;
+      }
+    }
+
     if (mergeGroups.length > 0) {
       for (const group of mergeGroups) {
         lines.push(`merge(${group.join(", ")})`);
       }
       lines.push("");
-      // Emit each merged cell under its group's first key.
-      for (let cellIdx = 0; cellIdx < cells.length && cellIdx < mergeGroups.length; cellIdx++) {
-        const group = mergeGroups[cellIdx]!;
-        const cellValue = extractListTableCellValue(
-          String((cells[cellIdx] as any).innerHTML || ""),
-        );
-        const firstKey = group[0]!;
-        if (cellValue.type === "list" && cellValue.items.length > 0) {
-          lines.push(`${firstKey}:`);
-          for (const item of cellValue.items) {
-            lines.push(`  - ${item}`);
-          }
-        } else if (
-          cellValue.type === "multiline" &&
-          cellValue.text.includes("\n")
-        ) {
-          const valueLines = cellValue.text.split("\n");
-          lines.push(`${firstKey}: ${valueLines[0]}`);
-          for (let j = 1; j < valueLines.length; j++) {
-            lines.push(`  ${valueLines[j]}`);
-          }
-        } else {
-          lines.push(`${firstKey}: ${cellValue.text}`);
-        }
+    }
+
+    // Walk cells together with their column positions so merged cells land
+    // under the correct first key and regular cells keep their own key.
+    let colIdx = 0;
+    let mergeIdx = 0;
+    for (const cell of cells) {
+      if (colIdx >= columns.length) break;
+      const span =
+        parseInt(
+          (cell as any).getAttribute?.("colspan") || "1",
+          10,
+        ) || 1;
+      const cellValue = extractListTableCellValue(
+        String((cell as any).innerHTML || ""),
+      );
+
+      const isMerged =
+        span > 1 && mergeIdx < mergeGroups.length;
+      const colKey = isMerged
+        ? mergeGroups[mergeIdx]![0]!
+        : columns[colIdx]!.key;
+
+      // For merged cells we always emit the value (even if empty) so the
+      // directive has something to attach to. For regular cells we skip
+      // empties to keep the markdown clean.
+      const isEmpty =
+        (cellValue.type === "list" &&
+          cellValue.items.length === 0) ||
+        ((cellValue.type === "text" ||
+          cellValue.type === "multiline") &&
+          cellValue.text.trim() === "");
+      if (!isMerged && isEmpty) {
+        colIdx += span;
+        continue;
       }
-    } else {
-      // Regular row: emit each known column that has a corresponding cell.
-      for (let i = 0; i < cells.length && i < columns.length; i++) {
-        const cellValue = extractListTableCellValue(
-          String((cells[i] as any).innerHTML || ""),
-        );
-        // Skip completely empty cells so the markdown stays clean.
-        const isEmpty =
-          (cellValue.type === "list" && cellValue.items.length === 0) ||
-          ((cellValue.type === "text" || cellValue.type === "multiline") &&
-            cellValue.text.trim() === "");
-        if (isEmpty) {
-          continue;
+
+      if (cellValue.type === "list" && cellValue.items.length > 0) {
+        lines.push(`${colKey}:`);
+        for (const item of cellValue.items) {
+          lines.push(`  - ${item}`);
         }
-        const colKey = columns[i]!.key;
-        if (cellValue.type === "list" && cellValue.items.length > 0) {
-          lines.push(`${colKey}:`);
-          for (const item of cellValue.items) {
-            lines.push(`  - ${item}`);
-          }
-        } else if (
-          cellValue.type === "multiline" &&
-          cellValue.text.includes("\n")
-        ) {
-          const valueLines = cellValue.text.split("\n");
-          lines.push(`${colKey}: ${valueLines[0]}`);
-          for (let j = 1; j < valueLines.length; j++) {
-            lines.push(`  ${valueLines[j]}`);
-          }
-        } else {
-          lines.push(`${colKey}: ${cellValue.text}`);
+      } else if (
+        cellValue.type === "multiline" &&
+        cellValue.text.includes("\n")
+      ) {
+        const valueLines = cellValue.text.split("\n");
+        lines.push(`${colKey}: ${valueLines[0]}`);
+        for (let j = 1; j < valueLines.length; j++) {
+          lines.push(`  ${valueLines[j]}`);
         }
+      } else {
+        lines.push(`${colKey}: ${cellValue.text}`);
       }
+
+      if (isMerged) mergeIdx++;
+      colIdx += span;
     }
 
     lines.push("");

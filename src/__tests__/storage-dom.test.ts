@@ -18,6 +18,31 @@ describe('storageToMarkdownBlocks', () => {
     expect(out).toContain('<!-- widget:TOC -->');
   });
 
+  it('self-closing TOC macro does not consume sibling content', () => {
+    // Regression: the self-closing `<ac:structured-macro ac:name="toc" />`
+    // form was previously matched by the open/close regex because `[^>]*>`
+    // consumed through the `/>`, then `[\s\S]*?</ac:structured-macro>` ate
+    // all sibling content up to the next unrelated closing tag.
+    const html = `
+      <p>Intro paragraph.</p>
+      <ac:structured-macro ac:name="toc" ac:schema-version="1" ac:macro-id="abc-123" />
+      <h1>Section 1</h1>
+      <p>Section content.</p>
+      <ac:structured-macro ac:name="expand" ac:schema-version="1">
+        <ac:parameter ac:name="title">Mermaid</ac:parameter>
+        <ac:plain-text-body><![CDATA[flowchart LR
+  A --> B]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `;
+    const out = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    expect(out).toContain('<!-- widget:TOC -->');
+    // The heading and paragraph after the TOC must NOT be swallowed.
+    expect(out).toContain('# Section 1');
+    expect(out).toContain('Section content.');
+  });
+
   it('renders GFM table with inline comments preserved', () => {
     const html = `
       <table>
@@ -1598,6 +1623,28 @@ describe('list tables', () => {
     expect(md).toContain('unit: Distance Learning (Online DACH)');
     expect(md).toContain('desc: Distance Learning. Take online exams');
     expect(md).toContain('family: FS');
+  });
+
+  it('infers merge directives from colspan when data-list-table-merge is absent', () => {
+    // Simulates a table that was edited in Confluence UI and lost our
+    // custom data attribute but still carries colspan on merged cells.
+    const html = `
+      <table data-list-table="true" data-list-table-config="programFamily:Program Family,businessUnit:Business Unit,characteristics:Characteristics,amountStudents:Amount Students">
+        <thead><tr><th><p>Program Family</p></th><th><p>Business Unit</p></th><th><p>Characteristics</p></th><th><p>Amount Students</p></th></tr></thead>
+        <tbody>
+          <tr>
+            <td colspan="4"><p>Distance Learning</p></td>
+          </tr>
+          <tr><td><p>FS</p></td><td><p>Distance Learning</p></td><td><p>Managed in EPOS</p></td><td><p>140.000</p></td></tr>
+        </tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md).toContain('merge(programFamily, businessUnit, characteristics, amountStudents)');
+    expect(md).toContain('programFamily: Distance Learning');
+    expect(md).toContain('programFamily: FS');
   });
 
   it('emits a list-table-config expand macro for round-trip survival', () => {

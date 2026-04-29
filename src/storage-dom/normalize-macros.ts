@@ -233,13 +233,16 @@ export function normalizeMacros(html: string): string {
   );
 
   // TOC macro → durable token so position is preserved through turndown.
-  out = out.replace(
-    /<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi,
-    () => "MD_WIDGET(toc)",
-  );
-  // Also handle self-closing TOC macro tags (e.g. `<ac:structured-macro ac:name="toc" />`).
+  // Self-closing form MUST be handled first to prevent the open/close pattern
+  // from greedily matching through the `/>` and consuming sibling content up
+  // to the next unrelated `</ac:structured-macro>` closing tag.
   out = out.replace(
     /<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*\/>/gi,
+    () => "MD_WIDGET(toc)",
+  );
+  // Non-self-closing form (with explicit open/close tags).
+  out = out.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=["']toc["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi,
     () => "MD_WIDGET(toc)",
   );
 

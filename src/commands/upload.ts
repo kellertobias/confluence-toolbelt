@@ -264,6 +264,7 @@ export async function uploadAll(opts: Options): Promise<void> {
           }
         }
         dbg(`calling updatePageStorage (partial→full fallback)`);
+        await checkMermaidUrls(fullHtml, rel);
         await client.updatePageStorage(
           meta.pageId,
           fullHtml,
@@ -292,6 +293,7 @@ export async function uploadAll(opts: Options): Promise<void> {
           }
         }
         dbg(`calling updatePageStorage (partial)`);
+        await checkMermaidUrls(html, rel);
         await client.updatePageStorage(
           meta.pageId,
           html,
@@ -324,6 +326,7 @@ export async function uploadAll(opts: Options): Promise<void> {
         }
       }
       dbg(`calling updatePageStorage (full)`);
+      await checkMermaidUrls(fullHtml, rel);
       await client.updatePageStorage(
         meta.pageId,
         fullHtml,
@@ -488,6 +491,38 @@ function normalizeDashes(input: string | undefined): string | undefined {
     return input;
   }
   return input.replace(/[\u2010-\u2015\u2212]/g, '-');
+}
+
+/**
+ * Test-render each mermaid.ink URL found in the generated HTML by fetching it.
+ * Warns if the service returns an error, so the user can catch broken diagrams
+ * before the page is published to Confluence.
+ */
+async function checkMermaidUrls(html: string, rel: string): Promise<void> {
+  const urlPattern = /ri:value="(https:\/\/mermaid\.ink\/[^"]+)"/g;
+  const checked = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = urlPattern.exec(html)) !== null) {
+    const url = match[1];
+    if (url == null) continue;
+    if (checked.has(url)) continue;
+    checked.add(url);
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const text = await res.text();
+          if (text.trim()) detail = `\n   ${text.trim().slice(0, 300)}`;
+        } catch { /* ignore */ }
+        console.warn(`⚠️  [mermaid] ${rel}: render check failed — HTTP ${res.status} ${res.statusText}${detail}`);
+        console.warn(`   URL: ${url}`);
+      }
+    } catch (err) {
+      console.warn(`⚠️  [mermaid] ${rel}: could not reach mermaid.ink — ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(`   URL: ${url}`);
+    }
+  }
 }
 
 function buildEffectiveTitle(
