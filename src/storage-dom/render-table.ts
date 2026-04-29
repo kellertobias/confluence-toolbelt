@@ -177,9 +177,7 @@ function extractListTableCellValue(html: string): ListTableCellValue {
   const lines = text
     .split("\n")
     .map((l) => l.trim())
-    .filter(
-      (l, idx, arr) => !(l === "" && (idx === 0 || idx === arr.length - 1)),
-    );
+    .filter((l) => l !== "");
 
   if (lines.length > 1) {
     return { type: "multiline", text: lines.join("\n"), items: [] };
@@ -307,7 +305,9 @@ export function renderListTableMarkdown(tableEl: Element): string {
       }
     }
 
+    lines.push("");
     lines.push("---");
+    lines.push("");
   }
 
   // Trim trailing separators and blank lines.

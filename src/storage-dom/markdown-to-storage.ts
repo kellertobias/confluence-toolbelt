@@ -568,6 +568,25 @@ function consumeBlockquote(
 // Tables
 // ---------------------------------------------------------------------------
 
+/**
+ * Join cell lines into a single escaped value. Blank lines in the middle
+ * become paragraph breaks (two literal \n characters). Leading and trailing
+ * blank lines are stripped so spacing between keys/rows doesn't leak into
+ * cell content.
+ */
+function joinCellLines(parts: string[]): string {
+  const trimmed = parts.map((s) => s.trim());
+  // Strip leading empty strings (blank lines before the value starts).
+  while (trimmed.length > 0 && trimmed[0] === "") {
+    trimmed.shift();
+  }
+  // Strip trailing empty strings (blank lines after the value ends).
+  while (trimmed.length > 0 && trimmed[trimmed.length - 1] === "") {
+    trimmed.pop();
+  }
+  return trimmed.join("\\n");
+}
+
 function looksLikeTableHeader(lines: string[], index: number): boolean {
   if (index + 1 >= lines.length) {
     return false;
@@ -1191,7 +1210,6 @@ function consumeListTable(
       const currentLine = lines[i] || "";
 
       if (
-        /^\s*$/.test(currentLine) ||
         /^\s*---\s*$/.test(currentLine) ||
         LIST_TABLE_END_RE.test(currentLine)
       ) {
@@ -1243,7 +1261,6 @@ function consumeListTable(
           while (i < lines.length) {
             const next = lines[i] || "";
             if (
-              /^\s*$/.test(next) ||
               /^\s*---\s*$/.test(next) ||
               LIST_TABLE_END_RE.test(next)
             ) {
@@ -1251,10 +1268,10 @@ function consumeListTable(
             }
             if (/^\s*([a-zA-Z_]\w*)\s*:/.test(next)) break;
             if (/^\s*merge\s*\(/.test(next)) break;
-            continuations.push(next.trim());
+            continuations.push(next);
             i++;
           }
-          row.cells[key] = continuations.join("\\n");
+          row.cells[key] = joinCellLines(continuations);
         }
       } else {
         // Value provided on same line; collect continuation lines.
@@ -1262,7 +1279,6 @@ function consumeListTable(
         while (i < lines.length) {
           const next = lines[i] || "";
           if (
-            /^\s*$/.test(next) ||
             /^\s*---\s*$/.test(next) ||
             LIST_TABLE_END_RE.test(next)
           ) {
@@ -1270,12 +1286,10 @@ function consumeListTable(
           }
           if (/^\s*([a-zA-Z_]\w*)\s*:/.test(next)) break;
           if (/^\s*merge\s*\(/.test(next)) break;
-          continuations.push(next.trim());
+          continuations.push(next);
           i++;
         }
-        row.cells[key] = [value, ...continuations]
-          .filter((s: string) => s !== "")
-          .join("\\n");
+        row.cells[key] = joinCellLines([value, ...continuations]);
       }
     }
 

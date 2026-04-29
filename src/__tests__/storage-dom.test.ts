@@ -1666,6 +1666,47 @@ describe('list tables', () => {
     expect(html).toContain('data-list-table="true"');
     expect(html).toContain('<h2>Next section</h2>');
   });
+
+  it('preserves blank lines within multi-paragraph cell values as paragraph breaks', () => {
+    const md = [
+      '<!-- list-table columns=family:"Family",desc:"Description" -->',
+      'family: OI/ EM',
+      'desc: For non EU students/ Emerging Markets (=EM).',
+      '',
+      'Formerly called FI (Fernstudium International)',
+      '',
+      '---',
+      '',
+      'family: FS',
+      'desc: For students residing in germany',
+      '',
+      '<!-- /list-table -->',
+    ].join('\n');
+
+    const html = markdownToStorageHtml(md);
+    // Should be exactly 2 data rows (merge row + OI row + FS row = 3 total)
+    const tbodyMatch = html.match(/<tbody>(.*?)<\/tbody>/s);
+    const rows = tbodyMatch?.[1]
+      ? tbodyMatch[1].match(/<tr[\s\S]*?<\/tr>/g) || []
+      : [];
+    expect(rows.length).toBe(2);
+
+    // The desc cell should contain a paragraph break (<br/><br/>)
+    expect(html).toContain(
+      'For non EU students/ Emerging Markets (=EM).<br/><br/>Formerly called FI (Fernstudium International)',
+    );
+
+    // Download should preserve the value on a single row
+    const md2 = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n');
+    expect(md2).toContain('family: OI/ EM');
+    expect(md2).toContain('desc: For non EU students/ Emerging Markets (=EM).');
+    expect(md2).toContain('Formerly called FI (Fernstudium International)');
+    // Should NOT create an extra row for the continuation text
+    const oiOccurrences = md2.split('family: OI/ EM').length - 1;
+    expect(oiOccurrences).toBe(1);
+  });
 });
 
 describe('detectUnsupportedFeatures', () => {
