@@ -1,3 +1,7 @@
+## <small>2.4.1 (2026-04-29)</small>
+
+* fix: preserve blank lines as paragraph breaks in table cells ([6972cbe](https://github.com/kellertobias/confluence-toolbelt/commit/6972cbe))
+
 ## 2.4.0 (2026-04-28)
 
 * feat: list to table feature ([469615a](https://github.com/kellertobias/confluence-toolbelt/commit/469615a))
