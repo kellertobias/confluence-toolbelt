@@ -439,6 +439,18 @@ describe('storageToMarkdownBlocks', () => {
     expect(back).toContain('<ac:caption>Figure 1: Example</ac:caption>');
   });
 
+  it('round-trips an attached image (markdown #filename <-> ri:attachment)', () => {
+    const md = '![Diagram](#diagram.png)';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:image');
+    expect(html).toContain('<ri:attachment ri:filename="diagram.png"/>');
+
+    const back = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    expect(back).toContain('![Diagram](#diagram.png)');
+  });
+
   it('panel macro downloads as blockquote with config tag and uploads back', () => {
     const html = `
       <ac:structured-macro ac:name="info">

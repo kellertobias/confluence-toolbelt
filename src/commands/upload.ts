@@ -8,6 +8,7 @@ import enquirer from 'enquirer';
 import { fromEnv } from '../api.js';
 import { commitFile, listChangedMarkdownFiles } from '../git.js';
 import { parseBlocks } from '../inline-tags.js';
+import { resolveLocalImages } from '../local-images.js';
 import { findUnparsedConfluenceLinks, resolveConfluencePageUrls, resolveLocalPageLinks } from '../local-links.js';
 import { parseHeader } from '../md-header.js';
 import { loadPageCache, savePageCache, validatePageLinks } from '../page-cache.js';
@@ -178,6 +179,18 @@ export async function uploadAll(opts: Options): Promise<void> {
     const baseUrl = process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || '';
     resolvedBody = resolveConfluencePageUrls(resolvedBody, baseUrl);
     dbg(`after link resolution: ${resolvedBody.length} chars`);
+
+    // Upload any locally-referenced image files as page attachments and rewrite
+    // their references to the #filename scheme so they render and round-trip.
+    resolvedBody = await resolveLocalImages(
+      resolvedBody,
+      file,
+      opts.cwd,
+      client,
+      meta.pageId,
+      { dbg },
+    );
+    dbg(`after image resolution: ${resolvedBody.length} chars`);
 
     // Warn about links that look like Confluence URLs but couldn't be parsed.
     for (const href of findUnparsedConfluenceLinks(resolvedBody, baseUrl)) {

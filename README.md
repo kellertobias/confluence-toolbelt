@@ -269,6 +269,9 @@ These are converted to Confluence `@mention` macros on upload and reconstructed 
 ### Images
 
 ```markdown
+<!-- Local image file (uploaded as a page attachment on upload) -->
+![Architecture](assets/architecture.png)
+
 <!-- External image (displayed at 500px width, centered) -->
 ![Alt text](https://example.com/image.png)
 
@@ -280,7 +283,24 @@ These are converted to Confluence `@mention` macros on upload and reconstructed 
 This is the caption text
 ```
 
-The `#filename.png` syntax references files that are **already attached to the Confluence page** (uploaded via the Confluence UI or API). This tool does not upload local image files as attachments.
+**Local image files are uploaded automatically on upload.** When an image src is
+a local file path (relative to the markdown file, with a fallback to the
+workspace root), the tool uploads the file as an attachment on the target page
+and rewrites the reference to the `#filename` attachment scheme so it renders
+correctly. Supported formats: **PNG, JPG/JPEG, SVG**, plus GIF, WebP, and BMP.
+Re-uploading the same file updates the existing attachment in place (a new
+version), so edits to an image are picked up on the next upload.
+
+Round-tripping: on download, attached images come back as `![alt](#filename)`,
+which re-uploads to the same attachment. The image stays correct across
+download/upload cycles. (Downloading does not copy the attachment binary back to
+a local file — the reference points at the Confluence attachment.)
+
+If a referenced local file is missing or has an unsupported extension, the
+reference is left unchanged and a warning is printed.
+
+The `#filename.png` syntax references files that are **already attached to the
+Confluence page** (uploaded by this tool, the Confluence UI, or the API).
 
 ### Tables
 

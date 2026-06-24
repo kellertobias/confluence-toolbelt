@@ -43,15 +43,17 @@ function buildAuthHeader(
 export class ConfluenceClient {
   private readonly base: string;
   private readonly headers: Record<string, string>;
+  private readonly authHeaders: Record<string, string>;
   private readonly debug: boolean;
 
   constructor(opts: ConfluenceClientOptions) {
     this.base = opts.baseUrl.replace(/\/$/, "");
     this.debug = opts.debug ?? false;
+    this.authHeaders = buildAuthHeader(opts);
     this.headers = {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...buildAuthHeader(opts),
+      ...this.authHeaders,
     };
   }
 
@@ -346,6 +348,85 @@ export class ConfluenceClient {
       );
     }
     return res.json();
+  }
+
+  /**
+   * Find an existing attachment on a page by exact filename.
+   *
+   * Why: Confluence keys attachments by filename per page. Before uploading we
+   * check whether one already exists so we can add a new version instead of
+   * failing on a duplicate name.
+   *
+   * Returns the attachment id, or null when none matches.
+   */
+  async findAttachment(
+    pageId: string,
+    filename: string,
+  ): Promise<{ id: string } | null> {
+    const url = this.buildV1(`/content/${pageId}/child/attachment`, {
+      filename,
+      limit: 50,
+    });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
+    if (!res.ok) {
+      return null;
+    }
+    const data = await res.json().catch(() => ({}) as any);
+    const results: any[] = (data as any)?.results ?? [];
+    const match = results.find((r) => r?.title === filename) ?? undefined;
+    return match ? { id: String(match.id) } : null;
+  }
+
+  /**
+   * Upload (create or update) a binary attachment on a page.
+   *
+   * Why: Local images referenced in markdown must live on the page as
+   * attachments for `<ri:attachment>` references to render. Re-uploading the
+   * same filename should update it in place rather than fail.
+   *
+   * How: If an attachment with this filename already exists, POST the new bytes
+   * to its `/data` endpoint (creating a new version); otherwise POST a fresh
+   * attachment. Both use multipart/form-data and the `X-Atlassian-Token:
+   * nocheck` header to bypass Confluence's XSRF guard.
+   */
+  async uploadAttachment(
+    pageId: string,
+    filename: string,
+    data: Buffer | Uint8Array,
+    contentType?: string,
+  ): Promise<void> {
+    const existing = await this.findAttachment(pageId, filename);
+
+    const form = new FormData();
+    const blob = new Blob(
+      [data as unknown as BlobPart],
+      contentType ? { type: contentType } : {},
+    );
+    form.append("file", blob, filename);
+    form.append("minorEdit", "true");
+
+    const pathname = existing
+      ? `/content/${pageId}/child/attachment/${existing.id}/data`
+      : `/content/${pageId}/child/attachment`;
+    const url = this.buildV1(pathname);
+
+    const headers: Record<string, string> = {
+      ...this.authHeaders,
+      Accept: "application/json",
+      "X-Atlassian-Token": "nocheck",
+    };
+
+    const res = await this.fetchWithDebug(url, {
+      method: "POST",
+      headers,
+      body: form as any,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `uploadAttachment ${filename} failed: ${res.status} ${res.statusText}\n${text.slice(0, 300)}`,
+      );
+    }
   }
 }
 
