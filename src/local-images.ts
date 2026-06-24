@@ -18,6 +18,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  type AttachmentCache,
+  getCachedHash,
+  hashContent,
+  setCachedHash,
+} from "./attachment-cache.js";
+
 /** File extensions we treat as uploadable images. */
 export const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   ".png",
@@ -149,6 +156,8 @@ const IMAGE_RE = /!\[([^\]]*)\]\(\s*([^)\s]+)\s*\)/g;
  * @param cwd         - Workspace root for fallback path resolution
  * @param uploader    - Confluence client (or compatible test double)
  * @param pageId      - Target Confluence page id
+ * @param opts.cache  - Optional hash cache; when provided, images whose bytes
+ *                      match the recorded hash are skipped (no re-upload).
  */
 export async function resolveLocalImages(
   markdown: string,
@@ -156,7 +165,11 @@ export async function resolveLocalImages(
   cwd: string,
   uploader: AttachmentUploader,
   pageId: string,
-  opts: { dbg?: (m: string) => void; warn?: (m: string) => void } = {},
+  opts: {
+    dbg?: (m: string) => void;
+    warn?: (m: string) => void;
+    cache?: AttachmentCache;
+  } = {},
 ): Promise<string> {
   const dbg = opts.dbg ?? (() => {});
   const warn = opts.warn ?? ((m: string) => console.warn(m));
@@ -202,14 +215,24 @@ export async function resolveLocalImages(
     takenFilenames.set(filename, abs);
   }
 
-  // Upload each unique file once.
+  // Upload each unique file once, skipping any whose bytes are unchanged since
+  // the last upload (per the optional hash cache).
+  const cache = opts.cache;
   for (const [abs, filename] of absToFilename) {
     const data = fs.readFileSync(abs);
+    const hash = hashContent(data);
+    if (cache && getCachedHash(cache, pageId, filename) === hash) {
+      dbg(`skipping unchanged attachment ${filename} (page ${pageId})`);
+      continue;
+    }
     const contentType = contentTypeForFilename(filename);
     dbg(
       `uploading attachment ${filename} (${data.length} bytes, ${contentType}) to page ${pageId}`,
     );
     await uploader.uploadAttachment(pageId, filename, data, contentType);
+    if (cache) {
+      setCachedHash(cache, pageId, filename, hash);
+    }
   }
 
   // Pass 2: rewrite resolved local refs to #filename attachment references.

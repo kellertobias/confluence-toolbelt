@@ -288,8 +288,14 @@ a local file path (relative to the markdown file, with a fallback to the
 workspace root), the tool uploads the file as an attachment on the target page
 and rewrites the reference to the `#filename` attachment scheme so it renders
 correctly. Supported formats: **PNG, JPG/JPEG, SVG**, plus GIF, WebP, and BMP.
-Re-uploading the same file updates the existing attachment in place (a new
-version), so edits to an image are picked up on the next upload.
+
+On each upload, an image is only re-uploaded if its content changed: a SHA-256
+of every uploaded file is recorded per page in a local `.attachments.json`
+cache, and unchanged images are skipped to avoid attachment-version churn. A
+changed image is re-uploaded, updating the existing attachment in place (a new
+version). The cache is a per-user optimisation (gitignored by `init`); delete
+`.attachments.json` to force every referenced image to upload again — useful if
+you removed an attachment in the Confluence UI by hand.
 
 Round-tripping: on download, attached images come back as `![alt](#filename)`,
 which re-uploads to the same attachment. The image stays correct across

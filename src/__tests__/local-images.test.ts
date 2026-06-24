@@ -2,6 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  type AttachmentCache,
+  hashContent,
+} from '../attachment-cache.js';
+import {
   contentTypeForFilename,
   isLocalImageRef,
   resolveLocalImages,
@@ -225,6 +229,66 @@ describe('resolveLocalImages', () => {
       'logo-1.png',
       'logo.png',
     ]);
+  });
+
+  it('skips upload when the cached hash matches, but still rewrites the ref', async () => {
+    const bytes = Buffer.from([5, 6, 7]);
+    writeFile('pic.png', bytes);
+    const file = writeFile('page.md', 'x');
+    const uploader = makeUploader();
+    const cache: AttachmentCache = {
+      '42': { 'pic.png': hashContent(bytes) },
+    };
+
+    const result = await resolveLocalImages(
+      '![p](pic.png)',
+      file,
+      TMP,
+      uploader,
+      '42',
+      { cache },
+    );
+
+    expect(result).toBe('![p](#pic.png)');
+    expect(uploader.calls).toHaveLength(0); // unchanged → skipped
+  });
+
+  it('re-uploads when the file content changed since last upload', async () => {
+    writeFile('pic.png', Buffer.from([9, 9, 9, 9]));
+    const file = writeFile('page.md', 'x');
+    const uploader = makeUploader();
+    const cache: AttachmentCache = {
+      '42': { 'pic.png': hashContent(Buffer.from([1, 1])) }, // stale hash
+    };
+
+    const result = await resolveLocalImages(
+      '![p](pic.png)',
+      file,
+      TMP,
+      uploader,
+      '42',
+      { cache },
+    );
+
+    expect(result).toBe('![p](#pic.png)');
+    expect(uploader.calls).toHaveLength(1);
+    // cache is updated to the freshly uploaded content hash
+    expect(cache['42']?.['pic.png']).toBe(hashContent(Buffer.from([9, 9, 9, 9])));
+  });
+
+  it('uploads and records the hash when no cache entry exists', async () => {
+    const bytes = Buffer.from([3, 1, 4, 1, 5]);
+    writeFile('pic.png', bytes);
+    const file = writeFile('page.md', 'x');
+    const uploader = makeUploader();
+    const cache: AttachmentCache = {};
+
+    await resolveLocalImages('![p](pic.png)', file, TMP, uploader, '7', {
+      cache,
+    });
+
+    expect(uploader.calls).toHaveLength(1);
+    expect(cache['7']?.['pic.png']).toBe(hashContent(bytes));
   });
 
   it('resolves percent-encoded paths with spaces', async () => {

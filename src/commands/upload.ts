@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import enquirer from 'enquirer';
 import { fromEnv } from '../api.js';
+import { loadAttachmentCache, saveAttachmentCache } from '../attachment-cache.js';
 import { commitFile, listChangedMarkdownFiles } from '../git.js';
 import { parseBlocks } from '../inline-tags.js';
 import { resolveLocalImages } from '../local-images.js';
@@ -140,6 +141,7 @@ export async function uploadAll(opts: Options): Promise<void> {
   }
 
   const pageCache = loadPageCache(opts.cwd);
+  const attachmentCache = loadAttachmentCache(opts.cwd);
 
   for (const file of files) {
     const rel = path.relative(opts.cwd, file);
@@ -188,7 +190,7 @@ export async function uploadAll(opts: Options): Promise<void> {
       opts.cwd,
       client,
       meta.pageId,
-      { dbg },
+      { dbg, cache: attachmentCache },
     );
     dbg(`after image resolution: ${resolvedBody.length} chars`);
 
@@ -364,6 +366,7 @@ export async function uploadAll(opts: Options): Promise<void> {
   }
 
   savePageCache(opts.cwd, pageCache);
+  saveAttachmentCache(opts.cwd, attachmentCache);
 }
 
 /**
