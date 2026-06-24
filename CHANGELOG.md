@@ -1,3 +1,7 @@
+## 2.7.0 (2026-06-24)
+
+* feat: skip re-uploading unchanged images via content-hash cache ([597d0ca](https://github.com/kellertobias/confluence-toolbelt/commit/597d0ca))
+
 ## 2.6.0 (2026-06-24)
 
 * chore: add .DS_Store to gitignore ([072c026](https://github.com/kellertobias/confluence-toolbelt/commit/072c026))
