@@ -1,3 +1,8 @@
+## 2.6.0 (2026-06-24)
+
+* chore: add .DS_Store to gitignore ([072c026](https://github.com/kellertobias/confluence-toolbelt/commit/072c026))
+* feat: upload local images as page attachments ([ca9cf8d](https://github.com/kellertobias/confluence-toolbelt/commit/ca9cf8d)), closes [#filename](https://github.com/kellertobias/confluence-toolbelt/issues/filename)
+
 ## 2.5.0 (2026-04-29)
 
 * feat: allow explicit closing tags for toc macros ([0f8f4f0](https://github.com/kellertobias/confluence-toolbelt/commit/0f8f4f0))
