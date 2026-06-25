@@ -302,11 +302,18 @@ which re-uploads to the same attachment. The image stays correct across
 download/upload cycles. (Downloading does not copy the attachment binary back to
 a local file — the reference points at the Confluence attachment.)
 
+**Editing an image after a round-trip still works.** The `#filename.png` syntax
+references an attachment on the page, but on upload the tool also looks for a
+local file named `filename.png` — first under the markdown file's own folder
+(e.g. `assets/filename.png`), then anywhere in the workspace. If it finds one, it
+keeps the attachment in sync with that file (uploading only when the bytes
+changed). So after `download` rewrites `![](assets/x.png)` to `![](#x.png)`, you
+can keep editing `assets/x.png` locally and your changes upload as usual. If no
+local file matches, `#filename.png` simply references the existing attachment
+(uploaded earlier by this tool, the Confluence UI, or the API), unchanged.
+
 If a referenced local file is missing or has an unsupported extension, the
 reference is left unchanged and a warning is printed.
-
-The `#filename.png` syntax references files that are **already attached to the
-Confluence page** (uploaded by this tool, the Confluence UI, or the API).
 
 ### Tables
 

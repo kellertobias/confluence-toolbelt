@@ -1,18 +1,25 @@
 /**
  * Upload local image files referenced in markdown as Confluence attachments.
  *
- * Why: Authors embed images with relative paths like `![diagram](assets/x.png)`.
- * Confluence cannot render a relative URL, so on upload each local image must be
- * uploaded as an attachment on the page and the reference rewritten to the
- * `#filename` attachment scheme that `markdownToStorageHtml` / `inlineHtml`
- * convert to `<ri:attachment>`. This also round-trips cleanly: on download such
- * images come back as `![alt](#filename)` and re-upload references the same
- * attachment.
+ * Why: Authors embed images either as a relative path (`![x](assets/x.png)`) or,
+ * after a download round-trip, as an attachment reference (`![x](#x.png)`).
+ * Confluence cannot render a relative URL, so on upload each referenced local
+ * image must be uploaded as an attachment on the page. This module handles both
+ * forms:
+ *
+ *   - Local path (`assets/x.png`): the file is uploaded and the reference is
+ *     rewritten to the `#filename` attachment scheme that
+ *     `markdownToStorageHtml` / `inlineHtml` convert to `<ri:attachment>`.
+ *   - Attachment ref (`#x.png`): if a local file named `x.png` exists near the
+ *     markdown (searched under the file's folder, then the workspace), the
+ *     attachment is kept in sync with it (upload-if-changed). The reference is
+ *     left as-is. If no local file matches, it simply references the existing
+ *     attachment, unchanged. This is what lets an edited image propagate after a
+ *     download has rewritten its reference to `#filename`.
  *
  * Supported formats: png, jpg/jpeg, gif, svg, webp, bmp.
  *
- * Already-attached refs (`#name`), external URLs (`http(s)://`, `data:` …) are
- * left untouched.
+ * External URLs (`http(s)://`, `data:` …) are never touched.
  */
 
 import fs from "node:fs";
@@ -46,6 +53,18 @@ const CONTENT_TYPES: Record<string, string> = {
   ".bmp": "image/bmp",
 };
 
+/** Directories never worth searching for a local image. */
+const IGNORED_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".nuxt",
+  ".cache",
+  "coverage",
+]);
+
 /** Minimal interface satisfied by `ConfluenceClient` (kept narrow for tests). */
 export interface AttachmentUploader {
   uploadAttachment(
@@ -60,6 +79,11 @@ export interface AttachmentUploader {
 export function contentTypeForFilename(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+/** True when a filename has one of our supported image extensions. */
+function isSupportedImage(filename: string): boolean {
+  return SUPPORTED_IMAGE_EXTENSIONS.has(path.extname(filename).toLowerCase());
 }
 
 /**
@@ -120,6 +144,42 @@ function resolveImagePath(
 }
 
 /**
+ * Build a `basename -> absolute path` index by walking the given roots
+ * breadth-first (skipping heavy/irrelevant directories). Earlier roots and
+ * shallower files win, so a file next to the markdown takes precedence over a
+ * deeper one or one elsewhere in the workspace with the same name. Traversal is
+ * sorted for deterministic results.
+ */
+function buildFileIndex(roots: string[]): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const root of roots) {
+    let queue: string[] = [root];
+    while (queue.length > 0) {
+      const dir = queue.shift() as string;
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      entries.sort((a, b) => a.name.localeCompare(b.name));
+      const subdirs: string[] = [];
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          if (!IGNORED_DIRS.has(entry.name)) {
+            subdirs.push(path.join(dir, entry.name));
+          }
+        } else if (entry.isFile() && !index.has(entry.name)) {
+          index.set(entry.name, path.join(dir, entry.name));
+        }
+      }
+      queue = [...queue, ...subdirs];
+    }
+  }
+  return index;
+}
+
+/**
  * Pick an attachment filename for an absolute path, disambiguating with a
  * numeric suffix when a different source file already claimed that basename
  * (attachments are keyed by filename per page).
@@ -144,12 +204,19 @@ function pickFilename(abs: string, taken: Map<string, string>): string {
 // Markdown image syntax: ![alt](src). src stops at whitespace or the closing ).
 const IMAGE_RE = /!\[([^\]]*)\]\(\s*([^)\s]+)\s*\)/g;
 
+interface UploadTask {
+  abs: string;
+  filename: string;
+}
+
 /**
- * Upload every local image referenced in `markdown` as an attachment on the
- * given page and rewrite each reference to `![alt](#filename)`.
+ * Upload local images referenced in `markdown` as attachments on the page and
+ * rewrite local-path references to the `![alt](#filename)` scheme. Attachment
+ * references (`#filename`) backed by a matching local file are kept in sync but
+ * left textually unchanged.
  *
- * Unresolvable paths and unsupported file types are left unchanged with a
- * warning. External URLs and existing `#name` references are never touched.
+ * Unresolvable local paths and unsupported file types are left unchanged with a
+ * warning. External URLs are never touched.
  *
  * @param markdown    - Markdown body (after the header has been stripped)
  * @param currentFile - Absolute path to the markdown file being uploaded
@@ -175,50 +242,91 @@ export async function resolveLocalImages(
   const warn = opts.warn ?? ((m: string) => console.warn(m));
   const currentDir = path.dirname(currentFile);
 
-  // Pass 1: discover unique local images to upload (keyed by original src).
-  const srcToAbs = new Map<string, string>();
+  // Lazily-built basename -> path index for matching `#filename` refs to local
+  // files. Built at most once per call, and only when an attachment ref needs it.
+  let fileIndex: Map<string, string> | null = null;
+  const indexRoots = currentDir === cwd ? [currentDir] : [currentDir, cwd];
+  const lookupLocalFile = (filename: string): string | null => {
+    if (!fileIndex) {
+      fileIndex = buildFileIndex(indexRoots);
+    }
+    return fileIndex.get(filename) ?? null;
+  };
+
+  // Pass 1: discover images to upload.
+  // - tasks:    abs path -> attachment filename (deduped uploads)
+  // - rewrites: original local src -> "#filename" (only local-path refs)
+  const tasks = new Map<string, UploadTask>();
+  const rewrites = new Map<string, string>();
+  const takenFilenames = new Map<string, string>(); // filename -> abs
+  const seenLocalSrc = new Set<string>();
+  const seenAttachmentNames = new Set<string>();
+
   for (const m of markdown.matchAll(IMAGE_RE)) {
     const src = m[2] ?? "";
-    if (!isLocalImageRef(src) || srcToAbs.has(src)) {
+
+    if (isLocalImageRef(src)) {
+      if (seenLocalSrc.has(src)) {
+        continue;
+      }
+      seenLocalSrc.add(src);
+      const abs = resolveImagePath(src, currentDir, cwd);
+      if (!abs) {
+        warn(
+          `⚠️  [images] Local image not found, leaving reference unchanged: ${src}`,
+        );
+        continue;
+      }
+      if (!isSupportedImage(abs)) {
+        warn(
+          `⚠️  [images] Unsupported image type (${path.extname(abs) || "no extension"}), leaving reference unchanged: ${src}`,
+        );
+        continue;
+      }
+      const existing = tasks.get(abs);
+      const filename = existing
+        ? existing.filename
+        : pickFilename(abs, takenFilenames);
+      if (!existing) {
+        tasks.set(abs, { abs, filename });
+        takenFilenames.set(filename, abs);
+      }
+      rewrites.set(src, `#${filename}`);
       continue;
     }
-    const abs = resolveImagePath(src, currentDir, cwd);
-    if (!abs) {
-      warn(
-        `⚠️  [images] Local image not found, leaving reference unchanged: ${src}`,
-      );
-      continue;
+
+    // Attachment reference: keep in sync with a matching local file if present.
+    if (src.startsWith("#")) {
+      const filename = src.slice(1).trim();
+      if (
+        !filename ||
+        seenAttachmentNames.has(filename) ||
+        !isSupportedImage(filename)
+      ) {
+        continue;
+      }
+      seenAttachmentNames.add(filename);
+      const abs = lookupLocalFile(filename);
+      if (!abs) {
+        continue; // no local file → references an existing attachment, leave it
+      }
+      if (!tasks.has(abs)) {
+        tasks.set(abs, { abs, filename });
+        takenFilenames.set(filename, abs);
+        dbg(`attachment ref #${filename} matched local file ${abs}`);
+      }
+      // No rewrite — the reference is already in #filename form.
     }
-    const ext = path.extname(abs).toLowerCase();
-    if (!SUPPORTED_IMAGE_EXTENSIONS.has(ext)) {
-      warn(
-        `⚠️  [images] Unsupported image type (${ext || "no extension"}), leaving reference unchanged: ${src}`,
-      );
-      continue;
-    }
-    srcToAbs.set(src, abs);
   }
 
-  if (srcToAbs.size === 0) {
+  if (tasks.size === 0) {
     return markdown;
   }
 
-  // Assign attachment filenames, disambiguating basename collisions.
-  const absToFilename = new Map<string, string>();
-  const takenFilenames = new Map<string, string>(); // filename -> abs
-  for (const abs of new Set(srcToAbs.values())) {
-    if (absToFilename.has(abs)) {
-      continue;
-    }
-    const filename = pickFilename(abs, takenFilenames);
-    absToFilename.set(abs, filename);
-    takenFilenames.set(filename, abs);
-  }
-
-  // Upload each unique file once, skipping any whose bytes are unchanged since
-  // the last upload (per the optional hash cache).
+  // Pass 2: upload each unique file once, skipping any whose bytes are unchanged
+  // since the last upload (per the optional hash cache).
   const cache = opts.cache;
-  for (const [abs, filename] of absToFilename) {
+  for (const { abs, filename } of tasks.values()) {
     const data = fs.readFileSync(abs);
     const hash = hashContent(data);
     if (cache && getCachedHash(cache, pageId, filename) === hash) {
@@ -235,13 +343,12 @@ export async function resolveLocalImages(
     }
   }
 
-  // Pass 2: rewrite resolved local refs to #filename attachment references.
+  // Pass 3: rewrite local-path refs to #filename attachment references.
+  if (rewrites.size === 0) {
+    return markdown;
+  }
   return markdown.replace(IMAGE_RE, (match, alt: string, rawSrc: string) => {
-    const abs = srcToAbs.get(rawSrc);
-    if (!abs) {
-      return match; // external URL, existing attachment, or unresolved — keep
-    }
-    const filename = absToFilename.get(abs);
-    return filename ? `![${alt}](#${filename})` : match;
+    const replacement = rewrites.get(rawSrc);
+    return replacement ? `![${alt}](${replacement})` : match;
   });
 }

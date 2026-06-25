@@ -291,6 +291,109 @@ describe('resolveLocalImages', () => {
     expect(cache['7']?.['pic.png']).toBe(hashContent(bytes));
   });
 
+  describe('#filename refs backed by a local file', () => {
+    it('re-uploads a #filename ref when a matching local file exists (same dir)', async () => {
+      writeFile('diagram.png', Buffer.from([1, 2, 3]));
+      const file = writeFile('page.md', 'x');
+      const uploader = makeUploader();
+
+      const result = await resolveLocalImages(
+        '![Arch](#diagram.png)',
+        file,
+        TMP,
+        uploader,
+        '99',
+      );
+
+      // Reference is left as-is, but the local file is uploaded.
+      expect(result).toBe('![Arch](#diagram.png)');
+      expect(uploader.calls).toHaveLength(1);
+      expect(uploader.calls[0]).toMatchObject({
+        pageId: '99',
+        filename: 'diagram.png',
+      });
+    });
+
+    it('finds the local file in a subdirectory (assets/)', async () => {
+      writeFile('assets/diagram.png', Buffer.from([4, 5]));
+      const file = writeFile('page.md', 'x');
+      const uploader = makeUploader();
+
+      const result = await resolveLocalImages(
+        '![Arch](#diagram.png)',
+        file,
+        TMP,
+        uploader,
+        '99',
+      );
+
+      expect(result).toBe('![Arch](#diagram.png)');
+      expect(uploader.calls).toHaveLength(1);
+      expect(uploader.calls[0]?.filename).toBe('diagram.png');
+    });
+
+    it('leaves a #filename ref untouched when no local file matches', async () => {
+      const file = writeFile('page.md', 'x');
+      const uploader = makeUploader();
+
+      const result = await resolveLocalImages(
+        '![Arch](#remote-only.png)',
+        file,
+        TMP,
+        uploader,
+        '99',
+      );
+
+      expect(result).toBe('![Arch](#remote-only.png)');
+      expect(uploader.calls).toHaveLength(0);
+    });
+
+    it('skips a #filename ref when the local file is unchanged (cache hit)', async () => {
+      const bytes = Buffer.from([7, 7, 7]);
+      writeFile('assets/diagram.png', bytes);
+      const file = writeFile('page.md', 'x');
+      const uploader = makeUploader();
+      const cache: AttachmentCache = {
+        '99': { 'diagram.png': hashContent(bytes) },
+      };
+
+      const result = await resolveLocalImages(
+        '![Arch](#diagram.png)',
+        file,
+        TMP,
+        uploader,
+        '99',
+        { cache },
+      );
+
+      expect(result).toBe('![Arch](#diagram.png)');
+      expect(uploader.calls).toHaveLength(0); // unchanged → skipped
+    });
+
+    it('re-uploads a #filename ref when the local file changed (round-trip edit)', async () => {
+      const newBytes = Buffer.from([8, 8, 8, 8]);
+      writeFile('assets/diagram.png', newBytes);
+      const file = writeFile('page.md', 'x');
+      const uploader = makeUploader();
+      const cache: AttachmentCache = {
+        '99': { 'diagram.png': hashContent(Buffer.from([7, 7, 7])) }, // stale
+      };
+
+      const result = await resolveLocalImages(
+        '![Arch](#diagram.png)',
+        file,
+        TMP,
+        uploader,
+        '99',
+        { cache },
+      );
+
+      expect(result).toBe('![Arch](#diagram.png)');
+      expect(uploader.calls).toHaveLength(1);
+      expect(cache['99']?.['diagram.png']).toBe(hashContent(newBytes));
+    });
+  });
+
   it('resolves percent-encoded paths with spaces', async () => {
     writeFile('my image.png', Buffer.from([1]));
     const file = writeFile('page.md', 'x');
