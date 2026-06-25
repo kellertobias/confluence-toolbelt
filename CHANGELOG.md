@@ -1,3 +1,7 @@
+## <small>2.7.1 (2026-06-25)</small>
+
+* fix: re-upload edited images referenced as #filename after a round-trip ([77e37af](https://github.com/kellertobias/confluence-toolbelt/commit/77e37af)), closes [#filename](https://github.com/kellertobias/confluence-toolbelt/issues/filename) [#filename](https://github.com/kellertobias/confluence-toolbelt/issues/filename)
+
 ## 2.7.0 (2026-06-24)
 
 * feat: skip re-uploading unchanged images via content-hash cache ([597d0ca](https://github.com/kellertobias/confluence-toolbelt/commit/597d0ca))
