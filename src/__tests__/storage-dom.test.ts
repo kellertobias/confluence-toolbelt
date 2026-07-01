@@ -207,6 +207,22 @@ describe('storageToMarkdownBlocks', () => {
     expect(html).toContain('<p><em>Rejected.</em></p>');
   });
 
+  it('strips comment thread tags so they never leak into storage', () => {
+    // Canonical form after obsidianToCanonical: a comment wrapper whose thread
+    // bodies (`<!-- # Author: body -->`) sit before the anchored text.
+    const md =
+      'Before <!-- comment:m-1 --><!-- # Alice: first --><!-- # Bob: reply -->the anchor<!-- commend-end:m-1 --> after';
+    const html = markdownToStorageHtml(md);
+    // The inline marker wraps ONLY the anchor — no thread bodies inside it.
+    expect(html).toContain(
+      '<ac:inline-comment-marker ac:ref="m-1">the anchor</ac:inline-comment-marker>',
+    );
+    // Thread tags must not survive anywhere in the uploaded storage.
+    expect(html).not.toContain('<!-- #');
+    expect(html).not.toContain('Alice');
+    expect(html).not.toContain('Bob');
+  });
+
   it('renders italics that wrap a link', () => {
     const md =
       '*→ Full discussion, alternatives: [TDD Discussion](pageid:6273368135)*';

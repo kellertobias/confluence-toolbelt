@@ -44,6 +44,12 @@ export function replaceMentionCommentsWithTokens(s: string): string {
  */
 export function replaceCommentWrapperCommentsWithTokens(s: string): string {
   return s
+    // Thread bodies (`<!-- # Author: body -->`) are display-only metadata that
+    // live between the comment wrappers. They must never enter Confluence
+    // storage — Confluence keeps its own comment bodies keyed by ac:ref, so a
+    // leaked tag would be re-added from the API on the next download and
+    // compound on every round-trip. Drop them here.
+    .replace(/<!--\s*#[\s\S]*?-->/g, "")
     .replace(
       /<!--\s*comment:([^\s>]+)\s*-->/g,
       (_m, id) => `MD_CMT_START(${encodeURIComponent(String(id || ""))})`,

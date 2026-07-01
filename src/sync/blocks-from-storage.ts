@@ -86,6 +86,14 @@ function injectCommentThreads(
     threads[markerRef] = threads[markerRef] ?? [];
     threads[markerRef]!.push({ author, text, date });
   }
+  // Heal pages that leaked thread tags into storage on an earlier upload: drop
+  // any embedded `<!-- # Author: body -->` before injecting the fresh API set,
+  // so duplicates can't accumulate across round-trips.
+  for (const b of blocks) {
+    if (b.text.includes('<!-- #')) {
+      b.text = b.text.replace(/<!--\s*#[\s\S]*?-->/g, '');
+    }
+  }
   for (const [ref, thread] of Object.entries(threads)) {
     if (thread.length === 0) continue;
     thread.sort((a, b) => a.date.getTime() - b.date.getTime());
