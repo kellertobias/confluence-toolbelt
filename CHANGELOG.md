@@ -1,3 +1,8 @@
+## <small>2.8.1 (2026-07-01)</small>
+
+* Merge branch 'main' of github-personal:kellertobias/confluence-toolbelt ([1bf24db](https://github.com/kellertobias/confluence-toolbelt/commit/1bf24db))
+* fix: upload error ([cf77921](https://github.com/kellertobias/confluence-toolbelt/commit/cf77921))
+
 ## 2.8.0 (2026-07-01)
 
 * fix: resolve obsidian/@codemirror peer conflict blocking release CI ([4cd0dbc](https://github.com/kellertobias/confluence-toolbelt/commit/4cd0dbc))
