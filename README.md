@@ -6,9 +6,11 @@ This repository contains the required tools to download Confluence pages as mark
 
 ⚠️ This tool is completely Vibe coded - the code looks terrible and isn't really up to my coding standards. But it solves the problem I needed it for and the engineers in my company love it.
 
-There is also an **Obsidian plugin** that brings the same download/edit/upload workflow into an Obsidian vault (desktop **and** mobile), using Obsidian-native markdown — properties, callouts, `%%` comments, wikilink/embed translation, and a git-free version-based merge. See [Obsidian plugin](#obsidian-plugin) below.
+There is also an **Obsidian plugin** (⚠️ work in progress) that brings the same download/edit/upload workflow into an Obsidian vault (desktop **and** mobile), using Obsidian-native markdown — properties, callouts, `%%` comments, wikilink/embed translation, and a git-free version-based merge. See [Obsidian plugin](#obsidian-plugin) below.
 
 ## Obsidian Plugin
+
+⚠️ **Work in progress.** The plugin is usable day-to-day but younger and less battle-tested than the CLI — expect rough edges, and keep an eye on your notes after download/upload until you trust it on your vault. Back up important pages before relying on it.
 
 The plugin lives in the same repo and is built to `plugin-dist/` (`main.js` + `manifest.json` + `versions.json`). Every GitHub release attaches these as assets, so you can install it straight from GitHub.
 
