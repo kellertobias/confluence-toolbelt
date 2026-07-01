@@ -432,7 +432,7 @@ export class ConfluenceClient {
    * How: If an attachment with this filename already exists, POST the new bytes
    * to its `/data` endpoint (creating a new version); otherwise POST a fresh
    * attachment. Both use multipart/form-data and the `X-Atlassian-Token:
-   * nocheck` header to bypass Confluence's XSRF guard.
+   * no-check` header to bypass Confluence's XSRF guard.
    */
   async uploadAttachment(
     pageId: string,
@@ -450,7 +450,7 @@ export class ConfluenceClient {
     const headers: Record<string, string> = {
       ...this.authHeaders,
       Accept: "application/json",
-      "X-Atlassian-Token": "nocheck",
+      "X-Atlassian-Token": "no-check",
     };
 
     const res = await this.fetchWithDebug(url, {
