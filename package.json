@@ -35,6 +35,12 @@
   "engines": {
     "node": ">=18"
   },
+  "overrides": {
+    "obsidian": {
+      "@codemirror/state": "$@codemirror/state",
+      "@codemirror/view": "$@codemirror/view"
+    }
+  },
   "devDependencies": {
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.4",
