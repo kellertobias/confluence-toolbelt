@@ -59,7 +59,14 @@ function buildMultipart(
 
 export const obsidianHttp: HttpClient = {
   async request(url: string, req: HttpRequest = {}): Promise<HttpResponse> {
-    const headers: Record<string, string> = { ...(req.headers ?? {}) };
+    // Confluence's XSRF filter treats requests without a recognizable
+    // non-browser User-Agent as suspicious even when X-Atlassian-Token:
+    // no-check is present; requestUrl sends no default. See
+    // https://forum.obsidian.md/t/x-atlassian-token-nocheck-not-beeing-sent-by-requesturl/82035
+    const headers: Record<string, string> = {
+      "User-Agent": "Obsidian.md",
+      ...(req.headers ?? {}),
+    };
     let body: string | ArrayBuffer | undefined = req.body;
 
     if (req.multipartFields || req.multipartFiles) {
