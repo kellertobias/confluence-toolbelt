@@ -1,3 +1,11 @@
+## 2.8.0 (2026-07-01)
+
+* fix: resolve obsidian/@codemirror peer conflict blocking release CI ([4cd0dbc](https://github.com/kellertobias/confluence-toolbelt/commit/4cd0dbc))
+* fix: strip comment thread tags on upload to stop round-trip duplication ([e0b7ea1](https://github.com/kellertobias/confluence-toolbelt/commit/e0b7ea1))
+* Merge branch 'main' of github-personal:kellertobias/confluence-toolbelt ([31568a9](https://github.com/kellertobias/confluence-toolbelt/commit/31568a9))
+* feat: Obsidian Plugin ([976985c](https://github.com/kellertobias/confluence-toolbelt/commit/976985c))
+* feat: Obsidian plugin — round-trip Confluence sync with change-bar gutter ([f2a494f](https://github.com/kellertobias/confluence-toolbelt/commit/f2a494f))
+
 ## <small>2.7.1 (2026-06-25)</small>
 
 * fix: re-upload edited images referenced as #filename after a round-trip ([77e37af](https://github.com/kellertobias/confluence-toolbelt/commit/77e37af)), closes [#filename](https://github.com/kellertobias/confluence-toolbelt/issues/filename) [#filename](https://github.com/kellertobias/confluence-toolbelt/issues/filename)
