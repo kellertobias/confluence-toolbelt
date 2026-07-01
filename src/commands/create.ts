@@ -11,7 +11,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { type ConfluenceClient, fromEnv } from '../api.js';
+import type { ConfluenceClient } from '../api.js';
+import { fromEnv } from '../adapters/node/confluence.js';
 import { commitFile } from '../git.js';
 import { emitHeader, parseHeader } from '../md-header.js';
 

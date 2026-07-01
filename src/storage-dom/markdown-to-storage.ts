@@ -8,8 +8,8 @@
  * tags, and basic inline formatting via `inlineHtml`.
  */
 
-import { deflateSync } from "node:zlib";
-
+import { bytesToBase64Url } from "../core/b64.js";
+import { getDeflater } from "./deflate.js";
 import { decodeBasicEntities, escapeHtml, escapeRegExp } from "./html-utils.js";
 import { inlineHtml } from "./inline-html.js";
 import { TABLE_WIDTH_PX } from "./table-layout.js";
@@ -397,8 +397,8 @@ function renderMermaidBlock(codeText: string): string {
     code: codeText,
     mermaid: { theme: "default" },
   });
-  const compressed = deflateSync(Buffer.from(state), { level: 9 });
-  const pakoEncoded = compressed.toString("base64url");
+  const compressed = getDeflater().zlib(new TextEncoder().encode(state));
+  const pakoEncoded = bytesToBase64Url(compressed);
   const imgUrl = `https://mermaid.ink/img/pako:${pakoEncoded}?type=png`;
   return (
     `<ac:image ac:align="center" ac:width="800">` +

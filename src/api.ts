@@ -5,7 +5,8 @@
  * download/upload/create commands.
  */
 
-import { URL } from "node:url";
+import { utf8ToBase64 } from "./core/b64.js";
+import type { HttpClient, HttpRequest, HttpResponse } from "./core/ports.js";
 
 export interface ConfluenceClientOptions {
   baseUrl: string;
@@ -13,6 +14,9 @@ export interface ConfluenceClientOptions {
   apiToken?: string;
   accessToken?: string; // optional bearer alternative
   debug?: boolean;
+  /** HTTP transport. CLI passes a fetch-backed adapter; the plugin passes a
+   * requestUrl-backed one (bypasses CORS, works on mobile). */
+  http: HttpClient;
 }
 
 export interface PageResponseV2 {
@@ -29,9 +33,7 @@ function buildAuthHeader(
   opts: ConfluenceClientOptions,
 ): Record<string, string> {
   if (opts.email && opts.apiToken) {
-    const b64 = Buffer.from(`${opts.email}:${opts.apiToken}`).toString(
-      "base64",
-    );
+    const b64 = utf8ToBase64(`${opts.email}:${opts.apiToken}`);
     return { Authorization: `Basic ${b64}` };
   }
   if (opts.accessToken) {
@@ -45,10 +47,12 @@ export class ConfluenceClient {
   private readonly headers: Record<string, string>;
   private readonly authHeaders: Record<string, string>;
   private readonly debug: boolean;
+  private readonly http: HttpClient;
 
   constructor(opts: ConfluenceClientOptions) {
     this.base = opts.baseUrl.replace(/\/$/, "");
     this.debug = opts.debug ?? false;
+    this.http = opts.http;
     this.authHeaders = buildAuthHeader(opts);
     this.headers = {
       Accept: "application/json",
@@ -65,19 +69,16 @@ export class ConfluenceClient {
 
   private async fetchWithDebug(
     url: string,
-    init: RequestInit = {},
-  ): Promise<Response> {
-    const method = (init.method ?? "GET").toUpperCase();
+    req: HttpRequest = {},
+  ): Promise<HttpResponse> {
+    const method = (req.method ?? "GET").toUpperCase();
     const relPath = url.replace(this.base, "");
-    const bodyLen = init.body ? String(init.body).length : 0;
+    const bodyLen = req.body ? String(req.body).length : 0;
     this.dbg(
       `→ ${method} ${relPath}${bodyLen ? ` (body ${bodyLen} bytes)` : ""}`,
     );
     const t = Date.now();
-    const res = await fetch(url, {
-      ...init,
-      signal: AbortSignal.timeout(30_000),
-    });
+    const res = await this.http.request(url, req);
     this.dbg(`← ${res.status} ${res.statusText} in ${Date.now() - t}ms`);
     return res;
   }
@@ -212,6 +213,50 @@ export class ConfluenceClient {
     return results.filter(
       (c) => c.extensions?.resolution?.status !== "resolved",
     );
+  }
+
+  /**
+   * List a page's attachments with their download paths and media types.
+   * Used on download to fetch the actual binaries into the vault so embeds
+   * (e.g. SVGs) render.
+   */
+  async listAttachments(
+    pageId: string,
+  ): Promise<{ filename: string; downloadPath: string; mediaType?: string }[]> {
+    const url = this.buildV1(`/content/${pageId}/child/attachment`, {
+      limit: 100,
+      expand: "metadata",
+    });
+    const res = await this.fetchWithDebug(url, { headers: this.headers });
+    if (!res.ok) {
+      return [];
+    }
+    const data = await res.json().catch(() => ({}) as any);
+    const results: any[] = (data as any)?.results ?? [];
+    return results
+      .map((r) => ({
+        filename: String(r?.title ?? ""),
+        downloadPath: String(r?._links?.download ?? ""),
+        mediaType: r?.metadata?.mediaType
+          ? String(r.metadata.mediaType)
+          : undefined,
+      }))
+      .filter((a) => a.filename && a.downloadPath);
+  }
+
+  /** Download an attachment's bytes from a `_links.download` path (or full URL). */
+  async downloadAttachmentData(downloadPath: string): Promise<Uint8Array> {
+    const url = downloadPath.startsWith("http")
+      ? downloadPath
+      : `${this.base}${downloadPath}`;
+    // Binary fetch: send auth only (no JSON Accept/Content-Type).
+    const res = await this.fetchWithDebug(url, { headers: this.authHeaders });
+    if (!res.ok) {
+      throw new Error(
+        `downloadAttachment failed: ${res.status} ${res.statusText}`,
+      );
+    }
+    return res.bytes();
   }
 
   async updatePageStorage(
@@ -392,18 +437,10 @@ export class ConfluenceClient {
   async uploadAttachment(
     pageId: string,
     filename: string,
-    data: Buffer | Uint8Array,
+    data: Uint8Array,
     contentType?: string,
   ): Promise<void> {
     const existing = await this.findAttachment(pageId, filename);
-
-    const form = new FormData();
-    const blob = new Blob(
-      [data as unknown as BlobPart],
-      contentType ? { type: contentType } : {},
-    );
-    form.append("file", blob, filename);
-    form.append("minorEdit", "true");
 
     const pathname = existing
       ? `/content/${pageId}/child/attachment/${existing.id}/data`
@@ -419,7 +456,8 @@ export class ConfluenceClient {
     const res = await this.fetchWithDebug(url, {
       method: "POST",
       headers,
-      body: form as any,
+      multipartFields: { minorEdit: "true" },
+      multipartFiles: [{ field: "file", filename, data, contentType }],
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -428,19 +466,4 @@ export class ConfluenceClient {
       );
     }
   }
-}
-
-export function fromEnv(debug = false): ConfluenceClient {
-  const baseUrl =
-    process.env.CONFLUENCE_BASE_URL || process.env.CONFLUENCE_URL || "";
-  if (!baseUrl) {
-    throw new Error("CONFLUENCE_BASE_URL (or CONFLUENCE_URL) must be set");
-  }
-  return new ConfluenceClient({
-    baseUrl,
-    email: process.env.CONFLUENCE_EMAIL,
-    apiToken: process.env.CONFLUENCE_API_TOKEN,
-    accessToken: process.env.CONFLUENCE_ACCESS_TOKEN,
-    debug,
-  });
 }

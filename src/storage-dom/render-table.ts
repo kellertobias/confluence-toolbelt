@@ -11,7 +11,7 @@
  *     bullet items).
  */
 
-import { parseHTML } from 'linkedom';
+import { getDom } from './dom.js';
 
 import { decodeBasicEntities, gcdNum } from './html-utils.js';
 import { tableWidthToLayoutName } from './table-layout.js';
@@ -536,7 +536,7 @@ export function replaceTableTokens(markdown: string, tables: string[]): string {
   return markdown.replace(/MD(?:\\)?_TABLE\((\d+)\)/g, (_m, num) => {
     const i = Number(num);
     const html = tables[i] || '';
-    const { document } = parseHTML(html);
+    const { document } = getDom().parse(html);
     const table = document.querySelector('table') as Element | null;
     if (!table) {
       return '';

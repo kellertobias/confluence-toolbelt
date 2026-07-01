@@ -11,6 +11,7 @@
  * The tokens are later decoded back into markdown by `decodeMdCommentTokens`.
  */
 
+import { utf8ToBase64 } from "../core/b64.js";
 import { decodeBasicEntities } from "./html-utils.js";
 
 export function normalizeMacros(html: string): string {
@@ -175,7 +176,7 @@ export function normalizeMacros(html: string): string {
       } else {
         code = decodeBasicEntities(code);
       }
-      return `MD_MERMAID(${Buffer.from(code).toString("base64")})`;
+      return `MD_MERMAID(${utf8ToBase64(code)})`;
     },
   );
   // Suppress orphaned mermaid.ink images (source already captured above).

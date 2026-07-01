@@ -6,6 +6,37 @@ This repository contains the required tools to download Confluence pages as mark
 
 ⚠️ This tool is completely Vibe coded - the code looks terrible and isn't really up to my coding standards. But it solves the problem I needed it for and the engineers in my company love it.
 
+There is also an **Obsidian plugin** that brings the same download/edit/upload workflow into an Obsidian vault (desktop **and** mobile), using Obsidian-native markdown — properties, callouts, `%%` comments, wikilink/embed translation, and a git-free version-based merge. See [Obsidian plugin](#obsidian-plugin) below.
+
+## Obsidian Plugin
+
+The plugin lives in the same repo and is built to `plugin-dist/` (`main.js` + `manifest.json` + `versions.json`). Every GitHub release attaches these as assets, so you can install it straight from GitHub.
+
+### Install with BRAT (recommended)
+
+1. Install the **BRAT** community plugin in Obsidian (Community plugins → search "BRAT").
+2. BRAT → *Add a beta plugin* → enter `kellertobias/confluence-toolbelt`.
+3. Enable **Confluence Tools** in Community plugins. BRAT keeps it updated from new GitHub releases.
+
+### Manual install
+
+Download `main.js` and `manifest.json` from the [latest release](https://github.com/kellertobias/confluence-toolbelt/releases/latest), drop them into `<vault>/.obsidian/plugins/confluence-tools/`, and enable the plugin.
+
+### Build from source
+
+```bash
+npm ci
+npm run build:plugin          # → plugin-dist/{main.js,manifest.json,versions.json}
+# copy plugin-dist/ into <vault>/.obsidian/plugins/confluence-tools/
+npm run dev:plugin            # watch mode while developing
+```
+
+### Configure & use
+
+Set your Confluence base URL, email, and API token in the plugin's settings (replaces the CLI's `.env`). Then run the commands from the command palette: **Download Confluence page**, **Upload current note to Confluence**, **Search Confluence and download**, **Test Confluence connection**.
+
+Releases are produced by [`@semantic-release`](.releaserc.json) on every push to `main`: it computes the version from Conventional Commits, syncs `manifest.json`/`versions.json` ([version-bump.mjs](version-bump.mjs)), bundles the plugin, and attaches the assets to the GitHub release. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) builds, tests, type-checks, and bundles the plugin (including a node-builtin guard for mobile-safety) on every PR.
+
 ## Usage and Use Cases
 
 ### Initial Setup

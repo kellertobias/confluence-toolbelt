@@ -5,13 +5,13 @@
  * unchanged for that id and it is reported in the returned `missing` list.
  */
 
-import { parseHTML } from "linkedom";
+import { getDom } from "./dom.js";
 
 export function replaceNodesById(
   storageHtml: string,
   replacements: Record<string, string>,
 ): { html: string; missing: string[] } {
-  const { document } = parseHTML(storageHtml);
+  const { document } = getDom().parse(storageHtml);
   const missing: string[] = [];
   for (const [nodeId, html] of Object.entries(replacements)) {
     const target = document.querySelector(`[data-node-id="${nodeId}"]`);

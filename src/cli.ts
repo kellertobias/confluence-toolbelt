@@ -10,12 +10,19 @@
  */
 
 import dotenv from "dotenv";
+import { nodeDeflater } from "./adapters/node/deflate.js";
+import { nodeDom } from "./adapters/node/dom.js";
 import { downloadAll } from "./commands/download.js";
 // Lazy-load interactive commands to avoid importing optional deps during non-interactive runs
 import { initEnv } from "./commands/init.js";
 import { uploadAll } from "./commands/upload.js";
+import { setDeflater } from "./storage-dom/deflate.js";
+import { setDom } from "./storage-dom/dom.js";
 
 dotenv.config();
+// Register the node DOM + zlib adapters for the conversion code.
+setDom(nodeDom);
+setDeflater(nodeDeflater);
 
 function printHelp() {
   // Keep concise; detailed help lives per command

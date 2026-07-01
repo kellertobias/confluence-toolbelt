@@ -1,0 +1,44 @@
+name: CI
+
+# Validates the CLI and the Obsidian plugin on every PR and branch push.
+# (Pushes to main are handled by release.yml, which runs the same checks before
+# releasing — so main is excluded here to avoid a redundant double run.)
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build, test, bundle plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Typecheck plugin
+        run: npm run typecheck:plugin
+
+      - name: Bundle plugin (node-builtin guard)
+        run: npm run build:plugin

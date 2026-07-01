@@ -5,7 +5,8 @@
  * the clickable browser URL, and an optional content excerpt.
  */
 
-import { fromEnv } from "../api.js";
+import { fromEnv } from "../adapters/node/confluence.js";
+import { decodeHtmlEntities } from "../storage-dom/html-utils.js";
 
 interface Options {
   cwd: string;
@@ -91,13 +92,7 @@ function parseArgs(args: string[]): ParsedArgs {
 
 /** Strip HTML tags and decode basic entities from a Confluence excerpt. */
 function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  return decodeHtmlEntities(html.replace(/<[^>]+>/g, ""))
     .replace(/\s+/g, " ")
     .trim();
 }

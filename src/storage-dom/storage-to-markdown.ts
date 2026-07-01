@@ -4,8 +4,7 @@
  * its `data-node-id` when present, enabling targeted partial updates.
  */
 
-import { parseHTML } from "linkedom";
-
+import { getDom } from "./dom.js";
 import { unescapeMarkdownUnderscores } from "./markdown-escapes.js";
 import { normalizeMacros } from "./normalize-macros.js";
 import {
@@ -34,8 +33,8 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
   // Wrap in a full HTML document so linkedom always creates a valid body
   // element, even when the entire content is a text token (e.g. MD_WIDGET,
   // MD_CODE) with no HTML tags.
-  const { document } = parseHTML(`<html><body>${preprocessed}</body></html>`);
-  const root = document.body as any as Element;
+  const { body } = getDom().parse(`<html><body>${preprocessed}</body></html>`);
+  const root = body as any as Element;
   const blocks: MappedNode[] = [];
 
   const nodes = Array.from((root as any).childNodes || []) as any[];

@@ -34,8 +34,12 @@ jobs:
             - name: Install dependencies
               run: npm ci
 
-            - name: Build
-              run: npm run build
+            - name: Verify (build, test, plugin typecheck + bundle)
+              run: |
+                  npm run build
+                  npm run test:unit
+                  npm run typecheck:plugin
+                  npm run build:plugin
 
             - name: Run semantic-release
               env:

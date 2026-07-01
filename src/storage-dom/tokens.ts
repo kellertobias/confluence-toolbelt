@@ -12,6 +12,7 @@
  *     storage) after the Turndown pass.
  */
 
+import { base64ToUtf8 } from "../core/b64.js";
 import { escapeHtml } from "./html-utils.js";
 import { unescapeMarkdownUnderscores } from "./markdown-escapes.js";
 import { turndown } from "./turndown.js";
@@ -259,7 +260,7 @@ export function decodeMdCommentTokens(s: string): string {
   out = out.replace(
     /MD(?:\\)?_MERMAID\(([A-Za-z0-9+/=]+)\)/g,
     (_m, encoded) => {
-      const code = Buffer.from(String(encoded), "base64").toString("utf8");
+      const code = base64ToUtf8(String(encoded));
       return `\`\`\`mermaid\n${code}\n\`\`\``;
     },
   );

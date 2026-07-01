@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "rootDir": "src"
+  },
+  "include": [
+    "src/types/**/*.d.ts",
+    "src/plugin/**/*.ts",
+    "src/adapters/obsidian/**/*.ts",
+    "src/core/**/*.ts",
+    "src/api.ts",
+    "src/md-header.ts",
+    "src/inline-tags.ts",
+    "src/storage-dom/**/*.ts",
+    "src/sync/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/sync/base-source.ts",
+    "src/sync/sidecar.ts"
+  ]
+}

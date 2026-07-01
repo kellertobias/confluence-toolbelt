@@ -14,7 +14,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { URL } from 'node:url';
 import { parseHeader } from './md-header.js';
 
 /**

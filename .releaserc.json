@@ -29,20 +29,32 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "npm run build"
+        "prepareCmd": "npm run build && node version-bump.mjs ${nextRelease.version} && npm run build:plugin"
       }
     ],
     [
       "@semantic-release/github",
       {
         "successComment": false,
-        "failComment": false
+        "failComment": false,
+        "assets": [
+          { "path": "plugin-dist/main.js", "name": "main.js", "label": "main.js" },
+          { "path": "manifest.json", "name": "manifest.json", "label": "manifest.json" },
+          { "path": "styles.css", "name": "styles.css", "label": "styles.css" },
+          { "path": "versions.json", "name": "versions.json", "label": "versions.json" }
+        ]
       }
     ],
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md", "package.json", "package-lock.json"],
+        "assets": [
+          "CHANGELOG.md",
+          "package.json",
+          "package-lock.json",
+          "manifest.json",
+          "versions.json"
+        ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ]

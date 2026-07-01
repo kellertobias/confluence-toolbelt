@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import enquirer from 'enquirer';
-import { fromEnv } from '../api.js';
+import { fromEnv } from '../adapters/node/confluence.js';
 import { loadAttachmentCache, saveAttachmentCache } from '../attachment-cache.js';
 import { commitFile, listChangedMarkdownFiles } from '../git.js';
 import { parseBlocks } from '../inline-tags.js';
