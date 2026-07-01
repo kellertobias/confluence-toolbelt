@@ -1,3 +1,8 @@
+## <small>2.8.2 (2026-07-01)</small>
+
+* Merge branch 'main' of github-personal:kellertobias/confluence-toolbelt ([59096dc](https://github.com/kellertobias/confluence-toolbelt/commit/59096dc))
+* fix: send a default User-Agent on Obsidian plugin requests ([48e802a](https://github.com/kellertobias/confluence-toolbelt/commit/48e802a))
+
 ## <small>2.8.1 (2026-07-01)</small>
 
 * Merge branch 'main' of github-personal:kellertobias/confluence-toolbelt ([1bf24db](https://github.com/kellertobias/confluence-toolbelt/commit/1bf24db))
