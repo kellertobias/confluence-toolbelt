@@ -1,3 +1,7 @@
+## 2.10.0 (2026-07-02)
+
+* feat(storage-dom): round-trip markdown footnotes ([9d9e55a](https://github.com/kellertobias/confluence-toolbelt/commit/9d9e55a))
+
 ## 2.9.0 (2026-07-02)
 
 * feat(core): add mkdir/remove to the FileSystem port ([a217206](https://github.com/kellertobias/confluence-toolbelt/commit/a217206))
