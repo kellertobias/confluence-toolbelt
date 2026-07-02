@@ -1,3 +1,8 @@
+## 2.9.0 (2026-07-02)
+
+* feat(core): add mkdir/remove to the FileSystem port ([a217206](https://github.com/kellertobias/confluence-toolbelt/commit/a217206))
+* feat(plugin): download attachments into an attachments/ subfolder ([014b314](https://github.com/kellertobias/confluence-toolbelt/commit/014b314))
+
 ## <small>2.8.2 (2026-07-01)</small>
 
 * Merge branch 'main' of github-personal:kellertobias/confluence-toolbelt ([59096dc](https://github.com/kellertobias/confluence-toolbelt/commit/59096dc))
