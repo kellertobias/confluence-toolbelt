@@ -28,6 +28,12 @@ export function vaultFs(adapter: DataAdapter): FileSystem {
     async exists(path: string): Promise<boolean> {
       return adapter.exists(path);
     },
+    async mkdir(path: string): Promise<void> {
+      if (!(await adapter.exists(path))) await adapter.mkdir(path);
+    },
+    async remove(path: string): Promise<void> {
+      await adapter.remove(path);
+    },
     async list(dir: string): Promise<string[]> {
       const res = await adapter.list(dir);
       return [...res.files, ...res.folders];

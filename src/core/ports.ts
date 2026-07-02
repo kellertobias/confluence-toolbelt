@@ -37,6 +37,10 @@ export interface FileSystem {
   write(path: string, data: string): Promise<void>;
   writeBytes(path: string, data: Uint8Array): Promise<void>;
   exists(path: string): Promise<boolean>;
+  /** Create a directory (parent must exist; no-op if it already does). */
+  mkdir(path: string): Promise<void>;
+  /** Delete a file. */
+  remove(path: string): Promise<void>;
   /** List immediate child paths of a directory (files + folders). */
   list(dir: string): Promise<string[]>;
 }
