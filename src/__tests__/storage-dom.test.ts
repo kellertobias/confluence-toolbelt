@@ -1784,6 +1784,167 @@ describe('list tables', () => {
   });
 });
 
+describe('footnotes', () => {
+  it('moves footnote definitions to a section at the end of the page', () => {
+    const md = [
+      'Intro text[^1].',
+      '',
+      '[^1]: The footnote text.',
+      '',
+      'More content after the footnote definition.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // Definition text is not rendered inline where it was written.
+    expect(html.indexOf('The footnote text.')).toBeGreaterThan(
+      html.indexOf('More content after the footnote definition.'),
+    );
+    // Reference becomes a numbered superscript backlink.
+    expect(html).toContain('<sup><a id="fnref-1" href="#fn-1">1</a></sup>');
+    // Footnotes section is appended at the very end (with a trailing hidden
+    // expand macro that carries the id order for round-trip survival).
+    expect(html.trim().endsWith('</ac:structured-macro>')).toBe(true);
+    expect(html).toContain('<hr/><ol data-footnotes="true"><li id="fn-1">');
+    expect(html).toContain('The footnote text.');
+    expect(html).toContain('<a href="#fnref-1">↩</a>');
+  });
+
+  it('numbers footnotes in order of first reference, not definition order', () => {
+    const md = [
+      '[^b]: Second definition, written first.',
+      '',
+      '[^a]: First definition, written second.',
+      '',
+      'Uses b[^b] before a[^a].',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('href="#fn-b">1</a>');
+    expect(html).toContain('href="#fn-a">2</a>');
+  });
+
+  it('repeated references to the same footnote share one number and only one anchor id', () => {
+    const md = [
+      'First use[^1] and second use[^1] too.',
+      '',
+      '[^1]: Shared footnote.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect((html.match(/id="fnref-1"/g) || []).length).toBe(1);
+    expect((html.match(/href="#fn-1">1<\/a>/g) || []).length).toBe(2);
+    expect((html.match(/<li id="fn-1"/g) || []).length).toBe(1);
+  });
+
+  it('leaves undefined footnote references untouched and drops unreferenced definitions', () => {
+    const md = [
+      'This references an undefined footnote[^missing].',
+      '',
+      '[^unused]: Never referenced.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('[^missing]');
+    expect(html).not.toContain('Never referenced');
+    expect(html).not.toContain('<hr/><ol>');
+  });
+
+  it('supports indented continuation lines in footnote definitions', () => {
+    const md = [
+      'See note[^1].',
+      '',
+      '[^1]: First line of the footnote',
+      '    continued on a second line.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('First line of the footnote continued on a second line.');
+  });
+
+  it('does not convert footnote-like text inside fenced code blocks', () => {
+    const md = [
+      'Real ref[^1].',
+      '',
+      '```',
+      'literal [^1] in code',
+      '```',
+      '',
+      '[^1]: A footnote.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('literal [^1] in code');
+    expect(html).toContain('<sup><a id="fnref-1" href="#fn-1">1</a></sup>');
+  });
+
+  it('renders inline markdown inside footnote definition text', () => {
+    const md = [
+      'Ref[^1].',
+      '',
+      '[^1]: See **bold** and [a link](https://example.com).',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<strong>bold</strong>');
+    expect(html).toContain('<a href="https://example.com">a link</a>');
+  });
+
+  it('round-trips footnote references and definitions back to `[^id]` markdown', () => {
+    const md = [
+      '# Title',
+      '',
+      'Some intro with a footnote[^note] and another one[^2].',
+      '',
+      'More text here[^note] referencing the same note again.',
+      '',
+      '[^note]: This is the **first** footnote, see [docs](https://example.com).',
+      '[^2]: Second footnote text.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    const downloaded = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n\n');
+
+    expect(downloaded).toContain(
+      'Some intro with a footnote[^note] and another one[^2].',
+    );
+    expect(downloaded).toContain(
+      'More text here[^note] referencing the same note again.',
+    );
+    expect(downloaded).toContain(
+      '[^note]: This is the **first** footnote, see [docs](https://example.com).',
+    );
+    expect(downloaded).toContain('[^2]: Second footnote text.');
+    // No leftover Confluence markup or link-style refs.
+    expect(downloaded).not.toContain('#fn-');
+    expect(downloaded).not.toContain('↩');
+    expect(downloaded).not.toContain('data-footnotes');
+
+    // Re-uploading the downloaded markdown reproduces the same storage HTML.
+    const reuploaded = markdownToStorageHtml(downloaded);
+    expect(reuploaded).toBe(html);
+  });
+
+  it('still round-trips after Confluence strips the fn-/fnref- id attributes', () => {
+    const md = [
+      'Ref one[^a] and ref two[^b].',
+      '',
+      '[^a]: Definition A.',
+      '[^b]: Definition B.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // Simulate Confluence stripping id="fn-..." / id="fnref-..." attributes
+    // (hrefs are left intact, as they are ordinary attribute values, not
+    // attribute names Confluence would recognize and strip).
+    const stripped = html
+      .replace(/\s+id="fn-[^"]*"/g, '')
+      .replace(/\s+id="fnref-[^"]*"/g, '')
+      .replace(/\s+data-footnotes="true"/g, '');
+    expect(stripped).not.toContain('id="fn-');
+    expect(stripped).not.toContain('data-footnotes');
+
+    const downloaded = storageToMarkdownBlocks(stripped)
+      .map((b) => b.markdown)
+      .join('\n\n');
+    expect(downloaded).toContain('Ref one[^a] and ref two[^b].');
+    expect(downloaded).toContain('[^a]: Definition A.');
+    expect(downloaded).toContain('[^b]: Definition B.');
+  });
+});
+
 describe('detectUnsupportedFeatures', () => {
   it('detects multi-column layouts (section/column macros)', () => {
     const html = `

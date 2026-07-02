@@ -9,6 +9,7 @@ import { unescapeMarkdownUnderscores } from "./markdown-escapes.js";
 import { normalizeMacros } from "./normalize-macros.js";
 import {
   renderDefListMarkdown,
+  renderFootnotesMarkdown,
   renderListTableMarkdown,
   renderReqListMarkdown,
   renderTableMarkdown,
@@ -44,6 +45,19 @@ export function storageToMarkdownBlocks(storageHtml: string): MappedNode[] {
     }
 
     if (node.nodeType === 1) {
+      // The divider immediately before a footnotes list is synthetic (added
+      // by the upload path purely for visual separation) and is regenerated
+      // automatically whenever footnote definitions are present. Skip it so
+      // re-uploading the downloaded markdown doesn't produce a duplicate.
+      if (
+        String((node as any).tagName || "").toLowerCase() === "hr" &&
+        String((node as any).nextElementSibling?.tagName || "").toLowerCase() ===
+          "ol" &&
+        (node as any).nextElementSibling?.getAttribute?.("data-footnotes") ===
+          "true"
+      ) {
+        continue;
+      }
       const block = elementToBlock(node);
       if (block) {
         blocks.push(block);
@@ -76,6 +90,12 @@ function elementToBlock(element: any): MappedNode | null {
   };
   const nodeId = el.getAttribute?.("data-node-id") || undefined;
   const tag = String((el as any).tagName || "").toLowerCase();
+
+  // Footnotes list appended by the upload path: render back to `[^id]: ...`.
+  if (tag === "ol" && el.getAttribute?.("data-footnotes") === "true") {
+    const md = renderFootnotesMarkdown(el);
+    return md.trim() ? { nodeId, markdown: md.trim() } : null;
+  }
 
   // Top-level table: render as GFM, requirement list, or definition list.
   if (tag === "table") {

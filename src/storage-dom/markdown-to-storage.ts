@@ -37,8 +37,10 @@ const LIST_TABLE_END_RE = /^\s*<!--\s*\/list-table\s*-->\s*$/i;
  *
  * Supports headings, paragraphs, widgets via HTML comments (e.g.
  * `<!-- widget:TOC -->`), GFM tables (with optional `<!-- table:LAYOUT -->`
- * preambles), code/mermaid blocks, lists, images, blockquotes and panels.
- * Inline HTML comments inside table cells are preserved as-is.
+ * preambles), code/mermaid blocks, lists, images, blockquotes, panels, and
+ * footnotes (`[^id]` references with `[^id]: text` definitions, collected
+ * into a footnotes section appended at the end of the page). Inline HTML
+ * comments inside table cells are preserved as-is.
  */
 export function markdownToStorageHtml(md: string, debug = false): string {
   const dbg = (msg: string) => {
@@ -46,7 +48,9 @@ export function markdownToStorageHtml(md: string, debug = false): string {
       console.log(`[debug:md] ${msg}`);
     }
   };
-  const lines = md.split(/\r?\n/);
+  const { lines, defs: footnoteDefs } = extractFootnoteDefinitions(
+    md.split(/\r?\n/),
+  );
   dbg(`converting ${lines.length} lines`);
   const out: string[] = [];
   let i = 0;
@@ -290,8 +294,19 @@ export function markdownToStorageHtml(md: string, debug = false): string {
     out.push(`<p>${inlineWithTokens(para.join(" ").trim())}</p>`);
     dbg(`  ✓ paragraph done`);
   }
-  dbg(`conversion complete, output ${out.join("").length} chars`);
-  return out.join("");
+  let result = out.join("");
+  if (footnoteDefs.size > 0) {
+    const { html: withRefs, numbering } = applyFootnoteReferences(
+      result,
+      footnoteDefs,
+    );
+    result = withRefs;
+    if (numbering.size > 0) {
+      result += renderFootnotesSection(footnoteDefs, numbering);
+    }
+  }
+  dbg(`conversion complete, output ${result.length} chars`);
+  return result;
 }
 
 /**
@@ -1097,6 +1112,134 @@ function consumeListAtIndent(
   }
 
   return { html: `<ul>${items.join("")}</ul>`, nextIndex: i };
+}
+
+// ---------------------------------------------------------------------------
+// Footnotes
+// ---------------------------------------------------------------------------
+
+const FOOTNOTE_DEF_RE = /^ {0,3}\[\^([^\]]+)\]:\s?(.*)$/;
+
+/**
+ * Strip `[^id]: text` footnote definitions (with indented continuation
+ * lines) out of the document, wherever they appear, replacing them with
+ * blank lines so surrounding paragraph/list boundaries are unaffected.
+ *
+ * Definitions are collected into a map keyed by id; a duplicate id keeps the
+ * first definition seen. References are resolved and numbered separately by
+ * `applyFootnoteReferences` once the rest of the document has been rendered.
+ */
+function extractFootnoteDefinitions(lines: string[]): {
+  lines: string[];
+  defs: Map<string, string>;
+} {
+  const defs = new Map<string, string>();
+  const outLines = lines.slice();
+  let i = 0;
+  while (i < outLines.length) {
+    const match = (outLines[i] || "").match(FOOTNOTE_DEF_RE);
+    if (!match) {
+      i++;
+      continue;
+    }
+    const id = (match[1] || "").trim();
+    let text = (match[2] || "").trim();
+    outLines[i] = "";
+    let j = i + 1;
+    while (j < outLines.length && /^[ \t]+\S/.test(outLines[j] || "")) {
+      const cont = (outLines[j] || "").trim();
+      text = text ? `${text} ${cont}` : cont;
+      outLines[j] = "";
+      j++;
+    }
+    if (id && !defs.has(id)) {
+      defs.set(id, text);
+    }
+    i = j;
+  }
+  return { lines: outLines, defs };
+}
+
+/**
+ * Replace `[^id]` references (for ids with a known definition) with a
+ * superscript backlink anchor, numbering ids in order of first appearance in
+ * the rendered HTML. CDATA sections (fenced/indented code block bodies) are
+ * stashed first so literal `[^id]`-looking text inside code isn't touched.
+ * Only the first occurrence of a given id gets the `fnref-` anchor id, so
+ * repeated references to the same footnote don't produce duplicate ids.
+ */
+function applyFootnoteReferences(
+  html: string,
+  defs: Map<string, string>,
+): { html: string; numbering: Map<string, number> } {
+  const cdataStash: string[] = [];
+  let stashed = html.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, (m) => {
+    const idx = cdataStash.push(m) - 1;
+    return `MD_FN_CDATA_${idx}_END`;
+  });
+
+  const numbering = new Map<string, number>();
+  const seenRefId = new Set<string>();
+  let n = 0;
+  stashed = stashed.replace(/\[\^([^\]\s]+)\]/g, (m, id: string) => {
+    if (!defs.has(id)) {
+      return m;
+    }
+    let num = numbering.get(id);
+    if (num === undefined) {
+      n++;
+      num = n;
+      numbering.set(id, num);
+    }
+    const idAttr = seenRefId.has(id)
+      ? ""
+      : ` id="fnref-${escapeHtml(id)}"`;
+    seenRefId.add(id);
+    return `<sup><a${idAttr} href="#fn-${escapeHtml(id)}">${num}</a></sup>`;
+  });
+
+  stashed = stashed.replace(
+    /MD_FN_CDATA_(\d+)_END/g,
+    (_m, idx) => cdataStash[Number(idx)] || "",
+  );
+
+  return { html: stashed, numbering };
+}
+
+/**
+ * Render the footnotes section appended at the end of the page: a divider
+ * followed by an ordered list, one entry per referenced footnote (in
+ * reference order, matching the inline superscript numbers), each with a
+ * backlink to its first reference.
+ *
+ * Confluence strips custom data-* attributes (and, defensively, may not
+ * preserve plain `id` attributes either) on save, so a hidden expand macro
+ * carrying the ordered id list is appended after the list. normalizeMacros
+ * detects this marker on download to re-inject `data-footnotes="true"` and
+ * the per-item `id="fn-..."` attributes before DOM parsing, the same trick
+ * used for req-lists/deflists/list-tables.
+ */
+function renderFootnotesSection(
+  defs: Map<string, string>,
+  numbering: Map<string, number>,
+): string {
+  const items: string[] = [];
+  const idsInOrder: string[] = [];
+  for (const [id] of numbering) {
+    idsInOrder.push(id);
+    const bodyHtml = inlineWithTokens(defs.get(id) || "");
+    items.push(
+      `<li id="fn-${escapeHtml(id)}"><p>${bodyHtml} <a href="#fnref-${escapeHtml(id)}">↩</a></p></li>`,
+    );
+  }
+  const configPayload = idsInOrder.map((id) => escapeHtml(id)).join(",");
+  return (
+    `<hr/><ol data-footnotes="true">${items.join("")}</ol>` +
+    `<ac:structured-macro ac:name="expand">` +
+    `<ac:parameter ac:name="title">footnotes-config</ac:parameter>` +
+    `<ac:rich-text-body><p>${configPayload}</p></ac:rich-text-body>` +
+    `</ac:structured-macro>`
+  );
 }
 
 // ---------------------------------------------------------------------------

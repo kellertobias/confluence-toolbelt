@@ -16,6 +16,7 @@ import { getDom } from './dom.js';
 import { decodeBasicEntities, gcdNum } from './html-utils.js';
 import { tableWidthToLayoutName } from './table-layout.js';
 import { decodeMdCommentTokens } from './tokens.js';
+import { turndown } from './turndown.js';
 
 /**
  * Convert a data-req-table back to a markdown bullet list of REQ/nREQ items.
@@ -374,6 +375,41 @@ function extractMultilineCellText(html: string): string {
 
 function needsQuoting(value: string): boolean {
   return /[\s]/.test(value);
+}
+
+// ---------------------------------------------------------------------------
+// Footnotes
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert the `<ol data-footnotes="true">` footnotes list (appended at the
+ * end of the page by the upload path) back into `[^id]: text` definitions.
+ *
+ * Each `<li id="fn-id">` carries the footnote's own backlink
+ * (`<a href="#fnref-id">↩</a>`), which is a UI affordance only and stripped
+ * before rendering the definition body.
+ */
+export function renderFootnotesMarkdown(olEl: Element): string {
+  const items = Array.from(olEl.querySelectorAll('li')) as Element[];
+  const lines: string[] = [];
+
+  for (const li of items) {
+    const id = ((li as any).getAttribute?.('id') || '').replace(/^fn-/, '');
+    if (!id) {
+      continue;
+    }
+    let html = String((li as any).innerHTML || '');
+    // Strip the backlink anchor — it's a UI affordance we added on upload,
+    // not part of the original footnote text.
+    html = html.replace(
+      /\s*<a[^>]*\bhref="#fnref-[^"]*"[^>]*>[\s\S]*?<\/a>/gi,
+      '',
+    );
+    const body = decodeMdCommentTokens(turndown.turndown(html)).trim();
+    lines.push(`[^${id}]: ${body}`);
+  }
+
+  return lines.join('\n\n');
 }
 
 export function renderTableMarkdown(tableEl: Element): string {

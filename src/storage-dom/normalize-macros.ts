@@ -151,6 +151,52 @@ export function normalizeMacros(html: string): string {
     },
   );
 
+  // Footnotes config: ordered list immediately followed by an expand macro
+  // whose title is "footnotes-config" → re-inject data-footnotes="true" and,
+  // defensively, per-<li> id="fn-..." attributes (in case Confluence stripped
+  // them along with any data-* attributes). This round-trips the footnote
+  // ids the upload path needs to reconstruct `[^id]: ...` definitions.
+  out = out.replace(
+    /(<ol\b[^>]*>[\s\S]*?<\/ol>)\s*<ac:structured-macro\b[^>]*\bac:name=["']expand["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (fullMatch, olHtml: string, macroInner: string) => {
+      const title = (
+        macroInner.match(
+          /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim();
+
+      if (title !== "footnotes-config") {
+        return fullMatch;
+      }
+
+      const body = (
+        macroInner.match(
+          /<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim();
+      const ids = body
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      let rewritten = olHtml.replace(/^<ol\b/, '<ol data-footnotes="true"');
+      let idx = 0;
+      rewritten = rewritten.replace(/<li\b([^>]*)>/gi, (liMatch, attrs) => {
+        if (/\bid=/i.test(attrs)) {
+          idx++;
+          return liMatch; // id survived — keep it as-is.
+        }
+        const id = ids[idx++];
+        return id ? `<li id="fn-${id}"${attrs}>` : liMatch;
+      });
+      return rewritten;
+    },
+  );
+
   // New mermaid: expand macro with "Mermaid" in title → extract source as
   // MD_MERMAID token.
   out = out.replace(

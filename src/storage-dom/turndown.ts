@@ -30,3 +30,22 @@ turndown.use(gfm);
   filter: "hr",
   replacement: () => "-------",
 });
+
+/**
+ * Convert a footnote reference (`<sup><a href="#fn-id">N</a></sup>`, emitted
+ * by markdown-to-storage's footnote handling) back to `[^id]`. Matches on the
+ * `#fn-` href prefix rather than the visible number, since repeated
+ * references to the same footnote share one number but must all map back to
+ * the same id.
+ */
+(turndown as any).addRule("footnoteReference", {
+  filter: (node: any) =>
+    node.nodeName === "SUP" &&
+    node.childNodes?.length === 1 &&
+    node.firstChild?.nodeName === "A" &&
+    /^#fn-/.test(node.firstChild.getAttribute?.("href") || ""),
+  replacement: (_content: string, node: any) => {
+    const href = node.firstChild.getAttribute("href") || "";
+    return `[^${href.replace(/^#fn-/, "")}]`;
+  },
+});
