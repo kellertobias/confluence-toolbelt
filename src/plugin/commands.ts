@@ -21,6 +21,7 @@ import {
 } from "../core/dialect/links.js";
 import { parseHeader } from "../md-header.js";
 import { hasUnresolvedConflicts } from "../sync/conflict.js";
+import { downloadReferencedAttachments } from "../core/pipeline/attachment-download.js";
 import { downloadPageToObsidian } from "../core/pipeline/obsidian-download.js";
 import { uploadObsidianPage } from "../core/pipeline/obsidian-upload.js";
 import {
@@ -152,7 +153,14 @@ async function writeDownloadedPage(
   await plugin.app.vault.adapter.write(notePath, markdown);
   // Fetch referenced attachment binaries so embeds (SVG/PNG/…) render, and
   // record their hashes so a subsequent upload skips the unchanged ones.
-  await downloadReferencedAttachments(plugin, pageId, markdown, notePath, result.sidecar);
+  await downloadReferencedAttachments(
+    ctx,
+    plugin.client(),
+    pageId,
+    markdown,
+    notePath,
+    result.sidecar,
+  );
   await writeSidecar(ctx.fs, ctx.path, notePath, result.sidecar);
   plugin.invalidateGutter();
 }
@@ -201,49 +209,6 @@ export async function resolveComment(
     new Notice("Comment resolved.");
   } catch (e) {
     new Notice(`Resolve failed: ${(e as Error).message}`);
-  }
-}
-
-/** Download every attachment referenced as an embed in the note, next to the
- * note, so Obsidian can resolve and render it. */
-async function downloadReferencedAttachments(
-  plugin: ConfluenceToolsPlugin,
-  pageId: string,
-  markdown: string,
-  notePath: string,
-  sidecar: { imageHashes?: Record<string, string> },
-): Promise<void> {
-  const names = new Set<string>();
-  for (const m of markdown.matchAll(/!\[\[([^\]\]|]+)(?:\|[^\]]*)?\]\]/g)) {
-    names.add((m[1] ?? "").trim());
-  }
-  if (!names.size) return;
-
-  const ctx = plugin.buildContext();
-  const client = plugin.client();
-  let attachments: Awaited<ReturnType<typeof client.listAttachments>>;
-  try {
-    attachments = await client.listAttachments(pageId);
-  } catch {
-    return;
-  }
-  const byName = new Map(attachments.map((a) => [a.filename, a]));
-  const dir = ctx.path.dirname(notePath);
-  const folder = dir && dir !== "." ? dir : "";
-  sidecar.imageHashes = sidecar.imageHashes ?? {};
-
-  for (const name of names) {
-    const att = byName.get(name);
-    if (!att) continue; // a local image, not a Confluence attachment
-    try {
-      const bytes = await client.downloadAttachmentData(att.downloadPath);
-      const target = folder ? `${folder}/${name}` : name;
-      await ctx.fs.writeBytes(target, bytes);
-      sidecar.imageHashes[name] = await ctx.hasher.sha256Hex(bytes);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error(`[confluence-tools] attachment "${name}" failed:`, e);
-    }
   }
 }
 
