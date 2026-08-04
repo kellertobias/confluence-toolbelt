@@ -42,6 +42,21 @@ const NAMED_ENTITIES: Record<string, string> = {
   ograve: "ò", oacute: "ó", ocirc: "ô", otilde: "õ", ouml: "ö", oslash: "ø",
   ugrave: "ù", uacute: "ú", ucirc: "û", uuml: "ü", yacute: "ý", thorn: "þ",
   yuml: "ÿ",
+  // Typographic punctuation and Latin-1 symbols. Confluence stores prose
+  // typography as named refs — a page written with em-dashes comes back as
+  // `&mdash;`, never as the character — so a text path that skips these leaks
+  // the entity into markdown while the DOM path decodes it.
+  mdash: "—", ndash: "–", hellip: "…", bull: "•", middot: "·",
+  lsquo: "‘", rsquo: "’", sbquo: "‚", ldquo: "“", rdquo: "”", bdquo: "„",
+  laquo: "«", raquo: "»", lsaquo: "‹", rsaquo: "›",
+  dagger: "†", Dagger: "‡", permil: "‰", prime: "′", Prime: "″",
+  deg: "°", plusmn: "±", times: "×", divide: "÷", minus: "−",
+  copy: "©", reg: "®", trade: "™", sect: "§", para: "¶", micro: "µ",
+  euro: "€", pound: "£", yen: "¥", cent: "¢", curren: "¤",
+  iexcl: "¡", iquest: "¿", brvbar: "¦", not: "¬", macr: "¯", acute: "´",
+  cedil: "¸", uml: "¨", ordf: "ª", ordm: "º",
+  sup1: "¹", sup2: "²", sup3: "³",
+  frac14: "¼", frac12: "½", frac34: "¾",
 };
 
 /**

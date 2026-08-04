@@ -8,6 +8,8 @@
  * feature names that would be lost on upload.
  */
 
+import { findExpandMacros, isInternalExpandTitle } from "./expand-macro.js";
+
 interface FeatureCheck {
   label: string;
   test: (html: string) => boolean;
@@ -31,26 +33,22 @@ const CHECKS: FeatureCheck[] = [
     test: (html) => /<ac:layout\b/i.test(html),
   },
   {
-    // Special handling: exclude our own mermaid diagram source expands.
+    /**
+     * Expands round-trip through the `<!-- expand:Title -->` delimiters as long
+     * as they sit at the top level of the page (or only inside other expands).
+     * One nested in a table cell or a panel body does not: those renderers
+     * flatten their content, so the collapse is lost. Only that case is
+     * reported. Expands the tool writes itself (mermaid source, deflist /
+     * requirement / list-table / footnote configuration) are never user content
+     * and are always excluded.
+     */
     label: "expand/collapse sections",
-    test: (html) => {
-      const expandMacros = html.match(
-        /<ac:structured-macro\b[^>]*\bac:name=["']expand["'][^>]*>[\s\S]*?<\/ac:structured-macro>/gi,
-      );
-      if (!expandMacros) {
-        return false;
-      }
-      return expandMacros.some((m) => {
-        const title = (
-          m.match(
-            /<ac:parameter[^>]*\bac:name=["']title["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
-          )?.[1] || ""
-        )
-          .replace(/<[^>]+>/g, "")
-          .trim();
-        return !/mermaid/i.test(title) && title !== "deflist-config" && title !== "req-table" && title !== "list-table-config";
-      });
-    },
+    test: (html) =>
+      findExpandMacros(html).some(
+        (macro) =>
+          !isInternalExpandTitle(macro.title) &&
+          macro.ancestors.some((ancestor) => ancestor !== "expand"),
+      ),
   },
   {
     label: "excerpt macros",

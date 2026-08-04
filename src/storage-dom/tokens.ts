@@ -243,6 +243,15 @@ export function decodeMdCommentTokens(s: string): string {
         return `<!-- mention:${id} ${label} -->`;
       },
     )
+    // Expand macro markers → the paired authoring comments.
+    .replace(
+      /MD(?:\\)?_EXPAND(?:\\)?_START\(([^)]*)\)/g,
+      (_m, titleEnc) => {
+        const title = decodeURIComponent(String(titleEnc || ""));
+        return title ? `<!-- expand:${title} -->` : "<!-- expand -->";
+      },
+    )
+    .replace(/MD(?:\\)?_EXPAND(?:\\)?_END\(\)/g, () => "<!-- /expand -->")
     // Emit code blocks using fenced style ```lang\n...\n```
     .replace(
       /MD(?:\\)?_CODE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,

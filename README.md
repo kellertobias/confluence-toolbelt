@@ -633,6 +633,29 @@ Confluence info/warning/note/tip panels use a special comment tag inside a block
 > Panel with a custom background color.
 ```
 
+### Expand / Collapse Sections
+
+Wrap any block content in a pair of delimiters to get Confluence's `expand`
+macro — the verdict stays visible, the evidence collapses:
+
+```markdown
+<!-- expand:How we measured this -->
+Arbitrary markdown goes here: paragraphs, lists, tables, code blocks.
+
+| Metric | Value |
+| --- | --- |
+| p95  | 210ms |
+<!-- /expand -->
+```
+
+The title after the colon is optional (`<!-- expand -->` renders an untitled
+section). Expands can be nested. The body is rendered through the same pipeline
+as the rest of the page, so everything that works at the top level works inside
+a collapsed section, and it round-trips back to the same delimiters on download.
+
+One limitation: an expand nested inside a table cell or a panel body cannot be
+represented in markdown. Upload warns about those, and they are flattened.
+
 ### Status Tags
 
 Inline status labels (colored badges):

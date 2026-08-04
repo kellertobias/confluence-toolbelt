@@ -33,6 +33,13 @@ const LIST_TABLE_START_RE = /^\s*<!--\s*list-table\s+(.+?)\s*-->\s*$/i;
 const LIST_TABLE_END_RE = /^\s*<!--\s*\/list-table\s*-->\s*$/i;
 
 /**
+ * Delimiters for a collapsible section:
+ * `<!-- expand:Title -->` … `<!-- /expand -->` (the title is optional).
+ */
+const EXPAND_START_RE = /^\s*<!--\s*expand(?::(.*?))?\s*-->\s*$/i;
+const EXPAND_END_RE = /^\s*<!--\s*\/expand\s*-->\s*$/i;
+
+/**
  * Convert Markdown to Confluence storage HTML.
  *
  * Supports headings, paragraphs, widgets via HTML comments (e.g.
@@ -119,6 +126,17 @@ export function markdownToStorageHtml(md: string, debug = false): string {
       );
       i++;
       continue;
+    }
+
+    // Collapsible section: `<!-- expand:Title -->` … `<!-- /expand -->`
+    if (EXPAND_START_RE.test(line)) {
+      const expand = consumeExpand(lines, i, debug);
+      if (expand) {
+        dbg(`  → expand`);
+        out.push(expand.html);
+        i = expand.nextIndex;
+        continue;
+      }
     }
 
     // Horizontal rule (canonical dashed form).
@@ -339,6 +357,9 @@ function startsNewBlock(lines: string[], i: number): boolean {
   if (/^\s*<!--\s*(?:widget|status|panel):/i.test(line)) {
     return true;
   }
+  if (EXPAND_START_RE.test(line) || EXPAND_END_RE.test(line)) {
+    return true;
+  }
   if (/^\s*<!--\s*table:/i.test(line) && looksLikeTableHeader(lines, i + 1)) {
     return true;
   }
@@ -391,6 +412,66 @@ export function naiveMarkdownToStorageHtml(md: string): string {
     }
   }
   return chunks.join("");
+}
+
+// ---------------------------------------------------------------------------
+// Expand (collapsible section)
+// ---------------------------------------------------------------------------
+
+/**
+ * Consume a `<!-- expand:Title -->` … `<!-- /expand -->` section and render it
+ * as Confluence's `expand` macro.
+ *
+ * The body is put back through `markdownToStorageHtml` so anything that works
+ * at the top level — tables, code blocks, lists, panels, nested expands — works
+ * inside a collapsible section too. Nesting is tracked by counting delimiters,
+ * so the first `<!-- /expand -->` does not close an outer section early.
+ *
+ * @returns `null` when the section is never closed, so the caller falls back to
+ *   treating the opening delimiter as ordinary content instead of swallowing
+ *   the rest of the document.
+ */
+function consumeExpand(
+  lines: string[],
+  start: number,
+  debug: boolean,
+): { html: string; nextIndex: number } | null {
+  const opening = (lines[start] || "").match(EXPAND_START_RE);
+  if (!opening) {
+    return null;
+  }
+  const title = (opening[1] || "").trim();
+  const body: string[] = [];
+  let depth = 1;
+  let i = start + 1;
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    if (EXPAND_END_RE.test(line)) {
+      depth--;
+      if (depth === 0) {
+        i++;
+        break;
+      }
+    } else if (EXPAND_START_RE.test(line)) {
+      depth++;
+    }
+    body.push(line);
+    i++;
+  }
+  if (depth !== 0) {
+    return null;
+  }
+  const titleParam = title
+    ? `<ac:parameter ac:name="title">${escapeHtml(title)}</ac:parameter>`
+    : "";
+  const inner = markdownToStorageHtml(body.join("\n"), debug);
+  return {
+    html:
+      `<ac:structured-macro ac:name="expand">${titleParam}` +
+      `<ac:rich-text-body>${inner}</ac:rich-text-body>` +
+      `</ac:structured-macro>`,
+    nextIndex: i,
+  };
 }
 
 // ---------------------------------------------------------------------------

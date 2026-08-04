@@ -1969,7 +1969,7 @@ describe('detectUnsupportedFeatures', () => {
     expect(unsupported).toContain('page layout');
   });
 
-  it('detects expand macros', () => {
+  it('does not flag top-level expand macros (they round-trip)', () => {
     const html = `
       <ac:structured-macro ac:name="expand">
         <ac:parameter ac:name="title">Click to expand</ac:parameter>
@@ -1977,7 +1977,72 @@ describe('detectUnsupportedFeatures', () => {
       </ac:structured-macro>
     `;
     const unsupported = detectUnsupportedFeatures(html);
+    expect(unsupported).not.toContain('expand/collapse sections');
+  });
+
+  it('does not flag expands nested inside other expands', () => {
+    const html = `
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Outer</ac:parameter>
+        <ac:rich-text-body>
+          <ac:structured-macro ac:name="expand">
+            <ac:parameter ac:name="title">Inner</ac:parameter>
+            <ac:rich-text-body><p>Deep</p></ac:rich-text-body>
+          </ac:structured-macro>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const unsupported = detectUnsupportedFeatures(html);
+    expect(unsupported).not.toContain('expand/collapse sections');
+  });
+
+  it('detects expand macros inside a table cell (the collapse is lost)', () => {
+    const html = `
+      <table>
+        <tr>
+          <td>
+            <ac:structured-macro ac:name="expand">
+              <ac:parameter ac:name="title">Details</ac:parameter>
+              <ac:rich-text-body><p>Hidden content</p></ac:rich-text-body>
+            </ac:structured-macro>
+          </td>
+        </tr>
+      </table>
+    `;
+    const unsupported = detectUnsupportedFeatures(html);
     expect(unsupported).toContain('expand/collapse sections');
+  });
+
+  it('detects expand macros inside a panel body (the collapse is lost)', () => {
+    const html = `
+      <ac:structured-macro ac:name="info">
+        <ac:rich-text-body>
+          <ac:structured-macro ac:name="expand">
+            <ac:parameter ac:name="title">Details</ac:parameter>
+            <ac:rich-text-body><p>Hidden content</p></ac:rich-text-body>
+          </ac:structured-macro>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const unsupported = detectUnsupportedFeatures(html);
+    expect(unsupported).toContain('expand/collapse sections');
+  });
+
+  it('does not flag the tool-written config expands', () => {
+    const html = `
+      <table><tr><td>x</td></tr></table>
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">deflist-config</ac:parameter>
+        <ac:rich-text-body><p>ROLE:Key,Value</p></ac:rich-text-body>
+      </ac:structured-macro>
+      <ol><li id="fn-a">note</li></ol>
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">footnotes-config</ac:parameter>
+        <ac:rich-text-body><p>a</p></ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const unsupported = detectUnsupportedFeatures(html);
+    expect(unsupported).not.toContain('expand/collapse sections');
   });
 
   it('does not flag mermaid expand macros as unsupported', () => {
@@ -2166,5 +2231,238 @@ describe('detectUnsupportedFeatures', () => {
     expect(unsupported).toContain('multi-column layout');
     expect(unsupported).toContain('page include');
     expect(unsupported).toContain('merged table cells');
+  });
+});
+
+describe('expand macros', () => {
+  const render = (html: string): string =>
+    storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n\n');
+
+  it('converts expand delimiters to an expand macro on upload', () => {
+    const md = [
+      '<!-- expand:How we measured this -->',
+      'Hidden prose.',
+      '<!-- /expand -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:structured-macro ac:name="expand">');
+    expect(html).toContain(
+      '<ac:parameter ac:name="title">How we measured this</ac:parameter>',
+    );
+    expect(html).toContain('<ac:rich-text-body><p>Hidden prose.</p></ac:rich-text-body>');
+  });
+
+  it('supports a title-less expand', () => {
+    const html = markdownToStorageHtml('<!-- expand -->\nBody.\n<!-- /expand -->');
+    expect(html).toContain('<ac:structured-macro ac:name="expand">');
+    expect(html).not.toContain('ac:name="title"');
+  });
+
+  it('reconstructs the delimiters from an expand macro on download', () => {
+    const html = `
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Evidence</ac:parameter>
+        <ac:rich-text-body><p>Hidden prose.</p></ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const md = render(html);
+    expect(md).toContain('<!-- expand:Evidence -->');
+    expect(md).toContain('Hidden prose.');
+    expect(md).toContain('<!-- /expand -->');
+  });
+
+  it('round-trips an expand containing a table and a code block', () => {
+    const md = [
+      '# Verdict',
+      '',
+      '<!-- expand:How we measured this -->',
+      'Some prose.',
+      '',
+      '| A | B |',
+      '| --- | --- |',
+      '| 1 | 2 |',
+      '',
+      '```ts',
+      'const x = 1;',
+      '```',
+      '',
+      '<!-- /expand -->',
+      '',
+      'After.',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    // The body goes through the normal block pipeline, not a flattened copy.
+    expect(html).toContain('<table>');
+    expect(html).toContain('<ac:parameter ac:name="language">ts</ac:parameter>');
+
+    const back = render(html);
+    expect(back).toContain('<!-- expand:How we measured this -->');
+    expect(back).toContain('| A | B |');
+    expect(back).toContain('```ts');
+    expect(back).toContain('<!-- /expand -->');
+    expect(back).toContain('After.');
+
+    // Stable: a second round trip changes neither the storage nor the markdown.
+    const html2 = markdownToStorageHtml(back);
+    expect(html2).toBe(html);
+    expect(render(html2)).toBe(back);
+  });
+
+  it('round-trips nested expands', () => {
+    const md = [
+      '<!-- expand:Outer -->',
+      'Outer body.',
+      '',
+      '<!-- expand:Inner -->',
+      'Inner body.',
+      '<!-- /expand -->',
+      '',
+      '<!-- /expand -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html.match(/ac:name="expand"/g)?.length).toBe(2);
+
+    const back = render(html);
+    expect(back).toContain('<!-- expand:Outer -->');
+    expect(back).toContain('<!-- expand:Inner -->');
+    expect(markdownToStorageHtml(back)).toBe(html);
+  });
+
+  it('preserves a title containing parentheses', () => {
+    const md = '<!-- expand:Method (v2) -->\nBody.\n<!-- /expand -->';
+    const back = render(markdownToStorageHtml(md));
+    expect(back).toContain('<!-- expand:Method (v2) -->');
+  });
+
+  it('does not swallow a preceding paragraph into the delimiter line', () => {
+    const html = markdownToStorageHtml(
+      'Intro line.\n<!-- expand:E -->\nBody.\n<!-- /expand -->',
+    );
+    expect(html).toContain('<p>Intro line.</p>');
+    expect(html).toContain('<ac:rich-text-body><p>Body.</p></ac:rich-text-body>');
+  });
+
+  it('round-trips a panel nested inside an expand', () => {
+    const md = [
+      '<!-- expand:E -->',
+      '> <!-- panel:info:info -->',
+      '> Note text.',
+      '<!-- /expand -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    const back = render(html);
+    expect(back).toContain('> <!-- panel:info:info -->');
+    expect(back).toContain('> Note text.');
+    expect(markdownToStorageHtml(back)).toBe(html);
+  });
+
+  it('decodes an entity-encoded title back to the character', () => {
+    // Confluence stores prose typography as named refs: a page written with an
+    // em-dash comes back as `&mdash;`, never as the character.
+    const html = `
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Category 2 &mdash; how it fails</ac:parameter>
+        <ac:rich-text-body><p>Body.</p></ac:rich-text-body>
+      </ac:structured-macro>
+    `;
+    const md = render(html);
+    expect(md).toContain('<!-- expand:Category 2 \u2014 how it fails -->');
+    expect(md).not.toContain('&mdash;');
+
+    // And republishing it must not double-escape into literal `&mdash;` text.
+    expect(markdownToStorageHtml(md)).toContain(
+      '<ac:parameter ac:name="title">Category 2 \u2014 how it fails</ac:parameter>',
+    );
+  });
+
+  it('round-trips a title containing an em-dash', () => {
+    const md = '<!-- expand:Category 2 \u2014 how it fails -->\nBody.\n<!-- /expand -->';
+    const html = markdownToStorageHtml(md);
+    const back = render(html);
+    expect(back).toContain('<!-- expand:Category 2 \u2014 how it fails -->');
+    expect(markdownToStorageHtml(back)).toBe(html);
+  });
+
+  it('round-trips a title containing a bare ampersand', () => {
+    const md = '<!-- expand:Care & EPOS -->\nBody.\n<!-- /expand -->';
+    const html = markdownToStorageHtml(md);
+    // The storage must be valid XML — a bare `&` is not.
+    expect(html).toContain('<ac:parameter ac:name="title">Care &amp; EPOS</ac:parameter>');
+    const back = render(html);
+    expect(back).toContain('<!-- expand:Care & EPOS -->');
+    expect(markdownToStorageHtml(back)).toBe(html);
+  });
+
+  it('round-trips a title containing angle brackets', () => {
+    const md = '<!-- expand:Handling <null> values -->\nBody.\n<!-- /expand -->';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain(
+      '<ac:parameter ac:name="title">Handling &lt;null&gt; values</ac:parameter>',
+    );
+    const back = render(html);
+    expect(back).toContain('<!-- expand:Handling <null> values -->');
+    expect(markdownToStorageHtml(back)).toBe(html);
+  });
+
+  it('leaves an unterminated expand delimiter as ordinary content', () => {
+    const html = markdownToStorageHtml('<!-- expand:Oops -->\nBody.');
+    expect(html).not.toContain('ac:name="expand"');
+    expect(html).toContain('Body.');
+  });
+
+  it('does not disturb mermaid diagram expands', () => {
+    const md = '```mermaid\ngraph TD\n    A --> B\n```';
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('Mermaid Diagram Source');
+
+    const back = render(html);
+    expect(back).toContain('```mermaid');
+    expect(back).toContain('graph TD');
+    expect(back).not.toContain('<!-- expand:');
+  });
+
+  it('does not disturb a deflist config expand', () => {
+    const md = [
+      '<!-- deflist keyword="ROLE" columns=Key,Value -->',
+      '- ROLE(Owner): Team A',
+      '- ROLE(Reviewer): Team B',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:parameter ac:name="title">deflist-config</ac:parameter>');
+
+    const back = render(html);
+    expect(back).toContain('<!-- deflist keyword="ROLE"');
+    expect(back).toContain('- ROLE(Owner): Team A');
+    expect(back).not.toContain('<!-- expand:');
+  });
+
+  it('does not disturb a footnotes config expand', () => {
+    const md = ['Claim.[^src]', '', '[^src]: The source.'].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<ac:parameter ac:name="title">footnotes-config</ac:parameter>');
+
+    const back = render(html);
+    expect(back).toContain('[^src]: The source.');
+    expect(back).not.toContain('<!-- expand:');
+  });
+
+  it('keeps a mermaid diagram authored inside an expand working', () => {
+    const md = [
+      '<!-- expand:Architecture -->',
+      '```mermaid',
+      'graph TD',
+      '    A --> B',
+      '```',
+      '<!-- /expand -->',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('mermaid.ink/img/pako:');
+
+    const back = render(html);
+    expect(back).toContain('<!-- expand:Architecture -->');
+    expect(back).toContain('```mermaid');
+    expect(back).toContain('<!-- /expand -->');
   });
 });

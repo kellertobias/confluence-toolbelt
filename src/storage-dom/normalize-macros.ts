@@ -12,6 +12,11 @@
  */
 
 import { utf8ToBase64 } from "../core/b64.js";
+import {
+  encodeExpandTitle,
+  findExpandMacros,
+  isInternalExpandTitle,
+} from "./expand-macro.js";
 import { decodeBasicEntities } from "./html-utils.js";
 
 export function normalizeMacros(html: string): string {
@@ -196,6 +201,12 @@ export function normalizeMacros(html: string): string {
       return rewritten;
     },
   );
+
+  // User-authored expand macros → paired marker tokens. Runs after the
+  // config-carrying expands above have been consumed by their own normalizers
+  // and skips anything the tool wrote itself (see `isInternalExpandTitle`), so
+  // the mermaid handler below still sees its own macros untouched.
+  out = normalizeExpandMacros(out);
 
   // New mermaid: expand macro with "Mermaid" in title → extract source as
   // MD_MERMAID token.
@@ -386,6 +397,38 @@ export function normalizeMacros(html: string): string {
     /<!--\s*([\s\S]*?)\s*-->/g,
     (_m, inner) => `MD_COMMENT(${encodeURIComponent(String(inner))})`,
   );
+  return out;
+}
+
+/**
+ * Replace user-authored expand macros with `MD_EXPAND_START` / `MD_EXPAND_END`
+ * marker paragraphs, leaving the macro's body in place so every block inside it
+ * keeps going through the normal pipeline (tables reach `renderTableMarkdown`,
+ * code macros become `MD_CODE` tokens, and so on).
+ *
+ * Only expands whose ancestors are all expands are converted — one inside a
+ * table cell or a panel body is consumed by that renderer instead and is
+ * reported by `detectUnsupportedFeatures`. Replacement runs back to front so
+ * earlier offsets stay valid, and recurses into each body to pick up nesting.
+ */
+function normalizeExpandMacros(html: string): string {
+  const macros = findExpandMacros(html).filter(
+    (macro) =>
+      macro.ancestors.length === 0 && !isInternalExpandTitle(macro.title),
+  );
+  let out = html;
+  for (let i = macros.length - 1; i >= 0; i--) {
+    const macro = macros[i];
+    if (!macro) {
+      continue;
+    }
+    const inner = normalizeExpandMacros(macro.body);
+    const replacement =
+      `<p>MD_EXPAND_START(${encodeExpandTitle(macro.title)})</p>` +
+      inner +
+      `<p>MD_EXPAND_END()</p>`;
+    out = out.slice(0, macro.start) + replacement + out.slice(macro.end);
+  }
   return out;
 }
 
