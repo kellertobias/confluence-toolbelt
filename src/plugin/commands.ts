@@ -23,6 +23,12 @@ import { parseHeader } from "../md-header.js";
 import { hasUnresolvedConflicts } from "../sync/conflict.js";
 import { downloadReferencedAttachments } from "../core/pipeline/attachment-download.js";
 import { downloadPageToObsidian } from "../core/pipeline/obsidian-download.js";
+import {
+  countPages,
+  fetchPageTree,
+  foldersForPlan,
+  planTreeLayout,
+} from "../core/pipeline/page-tree.js";
 import { uploadObsidianPage } from "../core/pipeline/obsidian-upload.js";
 import {
   parsePageId,
@@ -32,6 +38,7 @@ import {
 import type ConfluenceToolsPlugin from "./main.js";
 import { syncAfterDownload } from "./obsidisync.js";
 import { Progress } from "./progress.js";
+import { hasLocalChangesAt } from "./sync-status.js";
 import { buildPageIndex, mimeForFilename } from "./vault-index.js";
 
 function sanitizeTitle(title: string): string {
@@ -232,13 +239,34 @@ async function readPageIdAt(
   }
 }
 
+/**
+ * Ask before overwriting a note — but only when there is something to lose.
+ *
+ * Returns true (no prompt) when the note matches the last thing we synced, so
+ * refreshing a note that only changed in Confluence is silent. Returns the
+ * user's answer when the note has local edits.
+ */
+async function confirmOverwrite(
+  plugin: ConfluenceToolsPlugin,
+  notePath: string,
+): Promise<boolean> {
+  if (!(await hasLocalChangesAt(plugin, notePath))) return true;
+  return plugin
+    .buildContext()
+    .prompter.confirm(
+      `"${notePath}" has local changes that aren't in Confluence. Overwrite them with the latest version?`,
+    );
+}
+
 /** Decide where a downloaded page should be written, inside the active note's
- * folder. On a name clash: if the existing note is itself a Confluence download,
- * ask to overwrite (null = cancel); otherwise date-suffix the basename so a
+ * folder. On a name clash: if the existing note is this same Confluence page,
+ * refresh it in place (asking only when it has local edits); if it is a
+ * different Confluence page, ask; otherwise date-suffix the basename so a
  * hand-written note is never clobbered. */
 async function resolveDownloadPath(
   plugin: ConfluenceToolsPlugin,
   title: string,
+  pageId: string,
 ): Promise<string | null> {
   const folder = activeFolder(plugin);
   const base = sanitizeTitle(title);
@@ -248,9 +276,13 @@ async function resolveDownloadPath(
   if (!(await plugin.app.vault.adapter.exists(target))) return target;
 
   const existingPageId = await readPageIdAt(plugin, target);
+  if (existingPageId === pageId) {
+    // Same page — this is a refresh, not a clash.
+    return (await confirmOverwrite(plugin, target)) ? target : null;
+  }
   if (existingPageId) {
     const ok = await plugin.buildContext().prompter.confirm(
-      `"${base}.md" already exists (Confluence page ${existingPageId}). Overwrite with the latest from Confluence?`,
+      `"${base}.md" already exists but is a different Confluence page (${existingPageId}). Replace it with page ${pageId}?`,
     );
     return ok ? target : null;
   }
@@ -314,13 +346,14 @@ export async function downloadCommand(
 
     let notePath: string | null;
     if (activePath) {
-      // Re-pulling the open note: write back to the same file (after confirm).
-      const ok = await plugin.buildContext().prompter.confirm(
-        `Overwrite "${activePath}" with the latest from Confluence?`,
-      );
-      notePath = ok ? activePath : null;
+      // Re-pulling the open note: write back to the same file. Only ask first
+      // when the note actually has edits that aren't in Confluence — a plain
+      // "the page moved on" refresh has nothing to lose and shouldn't nag.
+      notePath = (await confirmOverwrite(plugin, activePath))
+        ? activePath
+        : null;
     } else {
-      notePath = await resolveDownloadPath(plugin, result.title);
+      notePath = await resolveDownloadPath(plugin, result.title, pageId);
     }
     if (!notePath) {
       progress.cancel("Download cancelled.");
@@ -378,7 +411,7 @@ export async function createConfluencePage(
       now: new Date().toISOString(),
       onStep: (m) => progress.step(m),
     });
-    const notePath = await resolveDownloadPath(plugin, title);
+    const notePath = await resolveDownloadPath(plugin, title, created.id);
     if (!notePath) {
       progress.cancel(
         `Created page ${created.id} in Confluence — skipped writing a local note.`,
@@ -476,6 +509,157 @@ export async function downloadAllCommand(
   );
 }
 
+/** Whether overwriting `notePath` would destroy edits made since its last sync.
+ *
+ * `unknown` means there's no recorded baseline (a hand-written note, or one
+ * synced before baselines existed) — the caller treats that as "don't touch"
+ * unless the user opted into overwriting. */
+async function localNoteState(
+  plugin: ConfluenceToolsPlugin,
+  notePath: string,
+): Promise<"missing" | "clean" | "dirty" | "unknown"> {
+  const ctx = plugin.buildContext();
+  if (!(await ctx.fs.exists(notePath))) return "missing";
+  try {
+    const sidecar = await readSidecar(ctx.fs, ctx.path, notePath);
+    const base = sidecar?.baseObsidian;
+    if (base == null) return "unknown";
+    const body = parseFrontmatter(await ctx.fs.read(notePath)).body;
+    const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+    return norm(body) === norm(base) ? "clean" : "dirty";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** pageId → note path for every Confluence-linked note in the vault. */
+function notePathsByPageId(plugin: ConfluenceToolsPlugin): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const f of plugin.app.vault.getMarkdownFiles()) {
+    const pid = plugin.app.metadataCache.getFileCache(f)?.frontmatter?.pageId;
+    if (pid !== undefined && pid !== null && pid !== "") {
+      const id = String(pid);
+      if (!map.has(id)) map.set(id, f.path);
+    }
+  }
+  return map;
+}
+
+/**
+ * Download a page and every descendant the user can access into a folder.
+ *
+ * Child pages go into a folder named after their parent note, mirroring the
+ * Confluence hierarchy. Notes already downloaded elsewhere in the vault are
+ * refreshed in place instead of being duplicated into the tree, and notes with
+ * unsynced local edits are skipped (unless the user opted to overwrite).
+ */
+export async function downloadTreeCommand(
+  plugin: ConfluenceToolsPlugin,
+  opts: {
+    pageId: string;
+    folder: string;
+    maxDepth?: number;
+    overwriteLocalChanges?: boolean;
+  },
+): Promise<void> {
+  if (!plugin.settings.baseUrl) {
+    new Notice("Set the Confluence base URL in settings first.");
+    return;
+  }
+
+  const client = plugin.client();
+  const ctx = plugin.buildContext();
+  const progress = new Progress(plugin, "Download tree");
+  try {
+    progress.start("Scanning page tree…");
+    const tree = await fetchPageTree(client, opts.pageId, {
+      maxDepth: opts.maxDepth,
+      onStep: (message, found) => progress.step(`${message} (${found} found)`),
+    });
+    const total = countPages(tree);
+
+    const where = opts.folder || "the vault root";
+    const ok = await ctx.prompter.confirm(
+      `Download ${total} page(s) under "${tree.title}" into ${where}?`,
+    );
+    if (!ok) {
+      progress.cancel("Download cancelled.");
+      return;
+    }
+
+    const existing = notePathsByPageId(plugin);
+    const plan = planTreeLayout(tree, {
+      folder: opts.folder,
+      sanitize: sanitizeTitle,
+      existingPath: (id) => existing.get(id) ?? null,
+    });
+    // Parents first, so the non-recursive vault mkdir always has its parent.
+    for (const dir of foldersForPlan(plan)) {
+      await ctx.fs.mkdir(dir);
+    }
+
+    let failed = 0;
+    const written: string[] = [];
+    const skipped: string[] = [];
+
+    for (const [i, page] of plan.entries()) {
+      progress.step(`${i + 1}/${plan.length} — ${page.title}`);
+      const state = await localNoteState(plugin, page.notePath);
+      if (!opts.overwriteLocalChanges && (state === "dirty" || state === "unknown")) {
+        skipped.push(page.notePath);
+        continue;
+      }
+      try {
+        const result = await downloadPageToObsidian(client, page.id, {
+          genId,
+          now: new Date().toISOString(),
+          resolvedRefs: await loadResolvedRefs(plugin, page.notePath),
+        });
+        await writeDownloadedPage(plugin, result, page.notePath, page.id);
+        written.push(page.notePath);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(`[confluence-tools] Tree: ${page.notePath} failed:`, e);
+        failed++;
+      }
+    }
+
+    if (written.length) {
+      progress.step("Syncing…");
+      await syncAfterDownload(plugin, written);
+    }
+
+    const parts = [`${written.length} page(s) downloaded`];
+    if (skipped.length) parts.push(`${skipped.length} skipped`);
+    if (failed) parts.push(`${failed} failed (see console)`);
+    progress.done(`"${tree.title}": ${parts.join(", ")}.`);
+
+    if (skipped.length) {
+      const shown = skipped.slice(0, 5).join("\n");
+      new Notice(
+        `Skipped ${skipped.length} note(s) with local changes:\n${shown}${
+          skipped.length > 5 ? `\n…and ${skipped.length - 5} more` : ""
+        }`,
+        10000,
+      );
+    }
+  } catch (e) {
+    progress.fail(e);
+  }
+}
+
+/** Palette entry: ask for the page, folder, and depth, then download the tree. */
+export async function downloadTreePromptCommand(
+  plugin: ConfluenceToolsPlugin,
+): Promise<void> {
+  if (!plugin.settings.baseUrl) {
+    new Notice("Set the Confluence base URL in settings first.");
+    return;
+  }
+  const { DownloadTreeModal } = await import("./tree-modal.js");
+  new DownloadTreeModal(plugin).open();
+}
+
 /** Upload the active note back to Confluence. */
 export async function uploadCommand(
   plugin: ConfluenceToolsPlugin,
@@ -556,6 +740,9 @@ export async function uploadCommand(
     const uploadedAt = new Date().toISOString();
     sidecar.baseMarkdown = parseHeader(result.canonical).body;
     sidecar.baseObsidian = parseFrontmatter(markdown).body;
+    // The merge base comes from reading the page back, so the next upload
+    // compares like with like. Absent only when that read-back failed.
+    if (result.baseBlocks) sidecar.baseBlocks = result.baseBlocks;
     sidecar.version = result.newVersion;
     sidecar.downloadedAt = uploadedAt;
     await writeSidecar(ctx.fs, ctx.path, file.path, sidecar);

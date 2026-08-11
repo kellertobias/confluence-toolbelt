@@ -23,6 +23,7 @@
     "node_modules",
     "dist",
     "src/sync/base-source.ts",
-    "src/sync/sidecar.ts"
+    "src/sync/sidecar.ts",
+    "src/sync/local-changes.ts"
   ]
 }

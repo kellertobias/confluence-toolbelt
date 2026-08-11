@@ -83,6 +83,7 @@ function ensureGitignore(opts: Options): boolean {
     '.env',
     '*.base.confluence',
     '.*.base.confluence',
+    '.*.base.md',
     '.attachments.json',
   ];
 
@@ -101,6 +102,7 @@ function ensureGitignore(opts: Options): boolean {
       '# Confluence sync baseline sidecars (per-user, never commit)',
       '*.base.confluence',
       '.*.base.confluence',
+      '.*.base.md',
       '',
       '# Local image attachment hash cache (per-user optimisation)',
       '.attachments.json',

@@ -288,10 +288,8 @@ export function markdownToStorageHtml(md: string, debug = false): string {
       para.push(lines[i] || "");
       i++;
     }
-    dbg(
-      `  → paragraph (${para.length} lines), calling inlineWithTokens on ${para.join(" ").trim().length} chars`,
-    );
-    out.push(`<p>${inlineWithTokens(para.join(" ").trim())}</p>`);
+    dbg(`  → paragraph (${para.length} lines)`);
+    out.push(`<p>${joinParagraphLines(para)}</p>`);
     dbg(`  ✓ paragraph done`);
   }
   let result = out.join("");
@@ -497,6 +495,27 @@ function renderImage(alt: string, src: string, caption: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Join a paragraph's lines, keeping markdown hard breaks as `<br/>`.
+ *
+ * A line ending in two spaces is an explicit line break. Collapsing the whole
+ * paragraph with `join(" ")` dropped it, which is how a Confluence panel's
+ * `<strong>Title</strong><br />body` came back as one run-on line — and, since
+ * the panel title is recognized by the first line being fully bold, cost the
+ * panel its title on the next download.
+ */
+function joinParagraphLines(lines: string[]): string {
+  return lines
+    .map((l, idx) => {
+      const hardBreak = /  $/.test(l) && idx < lines.length - 1;
+      return inlineWithTokens(l.trim()) + (hardBreak ? "<br/>" : "");
+    })
+    .join(" ")
+    // The separator space is redundant right after an explicit break.
+    .replace(/<br\/>\s+/g, "<br/>")
+    .trim();
+}
+
+/**
  * Apply our full inline pipeline: replace mention/comment-wrapper comments
  * with durable tokens, convert inline markdown to HTML, then render tokens
  * as Confluence macros and wrap comment ranges into inline markers.
@@ -536,9 +555,16 @@ function consumeInfoPanel(
     body.push((lines[i] || "").replace(/^>\s*/, ""));
     i++;
   }
-  const inner = body
-    .map((l) => inlineWithTokens(l.replace(/\\>/g, ">")))
-    .join("<br/>");
+  // Convert the panel body as markdown *blocks*, not as one run of inline
+  // text. Panels routinely carry fenced code, lists and several paragraphs;
+  // joining their lines with `<br/>` and only running the inline pass turned a
+  // code block inside an info panel into flat escaped text.
+  // An escaped `\>` is a literal `>` in the panel text. Stash it behind a
+  // placeholder rather than unescaping it up front, so the recursive pass
+  // can't mistake it for a nested blockquote marker.
+  const inner = markdownToStorageHtml(
+    body.map((l) => l.replace(/\\>/g, "MD_ESC_GT")).join("\n"),
+  ).replace(/MD_ESC_GT/g, "&gt;");
   const innerWithComments = wrapCommentTokenRangesToInlineMarkers(inner);
 
   if (color === "panel") {

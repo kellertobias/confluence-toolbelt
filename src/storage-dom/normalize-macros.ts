@@ -17,6 +17,8 @@ import { decodeBasicEntities } from "./html-utils.js";
 export function normalizeMacros(html: string): string {
   let out = html;
 
+  out = unwrapListItemParagraphs(out);
+
   // Inline Status macro → durable token with color/title.
   out = out.replace(
     /<ac:structured-macro\b[^>]*\bac:name=["']status["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
@@ -61,28 +63,12 @@ export function normalizeMacros(html: string): string {
   );
 
   // Info / Note / Warning / Tip / Panel macros → MD_PANEL token with color/icon
-  // and body.
-  out = out.replace(
-    /<ac:structured-macro\b[^>]*\bac:name=["'](info|note|warning|tip|success|error|panel)["'][^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
-    (_m, name: string, inner: string) => {
-      const macro = String(name || "").toLowerCase();
-      const body =
-        inner.match(
-          /<ac:rich-text-body[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
-        )?.[1] || "";
-      let color = macro;
-      let icon = macro;
-      if (macro === "panel") {
-        const bg =
-          inner.match(
-            /<ac:parameter[^>]*\bac:name=["']bgColor["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
-          )?.[1] || "";
-        color = bg.replace(/<[^>]+>/g, "").trim() || "panel";
-        icon = "panel";
-      }
-      return `MD_PANEL(${encodeURIComponent(color)},${encodeURIComponent(icon)})[${encodeURIComponent(body)}]`;
-    },
-  );
+  // and body. Nesting-aware (see `replacePanelMacros`).
+  out = replacePanelMacros(out);
+
+  // ADF panels (`<ac:adf-extension><ac:adf-node type="panel">`), the shape the
+  // current Confluence editor writes → the same MD_PANEL token.
+  out = replaceAdfExtensions(out);
 
   // Legacy mermaid: comment with base64 source + mermaid.ink image → fenced
   // block token.
@@ -246,7 +232,12 @@ export function normalizeMacros(html: string): string {
         )?.[1] || "";
       const capInner =
         innerStr.match(/<ac:caption[^>]*>([\s\S]*?)<\/ac:caption>/i)?.[1] || "";
-      const caption = capInner.replace(/<[^>]+>/g, "").trim();
+      // The caption is a plain-text slot inside `![…](…)`. Earlier passes may
+      // have left durable tokens in it (a status lozenge inside a caption is
+      // common), and an unflattened token drags `[`/`]` into the alt text,
+      // which breaks the image link outright — including the embed rewrite the
+      // attachment downloader keys off. Flatten to visible text.
+      const caption = flattenTokensToText(capInner.replace(/<[^>]+>/g, ""));
       const ref = url || (filename ? `attach:${filename}` : "");
       if (!ref) {
         return original; // leave unchanged if no recognizable ref
@@ -387,6 +378,266 @@ export function normalizeMacros(html: string): string {
     (_m, inner) => `MD_COMMENT(${encodeURIComponent(String(inner))})`,
   );
   return out;
+}
+
+/**
+ * Unwrap the single `<p>` Confluence puts inside every `<li>`.
+ *
+ * Confluence stores list items as `<li><p>text</p></li>`. Turndown reads that
+ * paragraph as a block and separates the items with a blank line, so a plain
+ * three-item list comes out as a "loose" list padded with empty lines — hard to
+ * read, and not how Confluence renders it. Dropping the wrapper paragraph gives
+ * a tight list.
+ *
+ * Only the item's *first* paragraph is unwrapped: an item that genuinely has
+ * two paragraphs still needs the blank line between them.
+ */
+function unwrapListItemParagraphs(html: string): string {
+  return html.replace(
+    /(<li\b[^>]*>)\s*<p\b[^>]*>([\s\S]*?)<\/p>\s*/gi,
+    (_m, li: string, inner: string) => `${li}${inner}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Nesting-aware element scanning
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the close tag matching an already-consumed opening `<tag …>`, honouring
+ * nested elements of the same name.
+ *
+ * Why this exists: Confluence nests structured macros freely — a code block or
+ * another panel inside an info panel is ordinary. A non-greedy
+ * `<ac:structured-macro …>([\s\S]*?)</ac:structured-macro>` stops at the *inner*
+ * close tag, so the outer macro's body is truncated (and everything after it
+ * leaks into the document as stray text).
+ *
+ * `from` is the index of the first character of the element's content.
+ */
+function matchClose(
+  html: string,
+  from: number,
+  tag: string,
+): { contentEnd: number; after: number } | null {
+  const re = new RegExp(`<${tag}\\b[^>]*?(\\/?)>|<\\/${tag}\\s*>`, "gi");
+  re.lastIndex = from;
+  let depth = 1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    if (m[0].startsWith("</")) {
+      depth--;
+      if (depth === 0) {
+        return { contentEnd: m.index, after: re.lastIndex };
+      }
+    } else if (m[1] !== "/") {
+      depth++;
+    }
+  }
+  return null;
+}
+
+/** First `<tag …>…</tag>` element in `html`, with nesting honoured. */
+function firstElement(
+  html: string,
+  tag: string,
+): { attrs: string; content: string; start: number; after: number } | null {
+  const open = new RegExp(`<${tag}\\b([^>]*?)(\\/?)>`, "i").exec(html);
+  if (!open) {
+    return null;
+  }
+  const start = open.index;
+  const from = start + open[0].length;
+  const attrs = open[1] ?? "";
+  if (open[2] === "/") {
+    return { attrs, content: "", start, after: from };
+  }
+  const span = matchClose(html, from, tag);
+  return span
+    ? { attrs, content: html.slice(from, span.contentEnd), start, after: span.after }
+    : { attrs, content: html.slice(from), start, after: html.length };
+}
+
+/** Body of the (outermost) `<ac:rich-text-body>` inside a macro's markup. */
+function richTextBody(inner: string): { params: string; body: string } {
+  const el = firstElement(inner, "ac:rich-text-body");
+  if (!el) {
+    return { params: inner, body: "" };
+  }
+  return { params: inner.slice(0, el.start), body: el.content };
+}
+
+/**
+ * Build an MD_PANEL token. The body is normalized recursively so macros nested
+ * inside the panel (code blocks, images, inline comment markers, further
+ * panels) become durable tokens too — otherwise they reach the decode step as
+ * raw `<ac:…>` markup, which the DOM/Turndown pass silently drops.
+ */
+function panelToken(color: string, icon: string, body: string): string {
+  return `MD_PANEL(${encodeURIComponent(color)},${encodeURIComponent(icon)})[${encodeURIComponent(normalizeMacros(body))}]`;
+}
+
+/** Info/note/warning/tip/success/error/panel macros → MD_PANEL, nesting-aware. */
+function replacePanelMacros(html: string): string {
+  const open =
+    /<ac:structured-macro\b[^>]*\bac:name=["'](info|note|warning|tip|success|error|panel)["'][^>]*?(\/?)>/gi;
+  let out = "";
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(html))) {
+    out += html.slice(cursor, m.index);
+    const macro = String(m[1] || "").toLowerCase();
+    if (m[2] === "/") {
+      out += panelToken(macro, macro, "");
+      cursor = open.lastIndex;
+      continue;
+    }
+    const span = matchClose(html, open.lastIndex, "ac:structured-macro");
+    if (!span) {
+      out += m[0];
+      cursor = open.lastIndex;
+      continue;
+    }
+    const inner = html.slice(open.lastIndex, span.contentEnd);
+    const { params, body } = richTextBody(inner);
+    let color = macro;
+    let icon = macro;
+    if (macro === "panel") {
+      const bg =
+        params.match(
+          /<ac:parameter[^>]*\bac:name=["']bgColor["'][^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        )?.[1] || "";
+      color = bg.replace(/<[^>]+>/g, "").trim() || "panel";
+      icon = "panel";
+    }
+    out += panelToken(color, icon, body);
+    cursor = span.after;
+    open.lastIndex = cursor;
+  }
+  return out + html.slice(cursor);
+}
+
+/** ADF panel types the editor emits, mapped onto our panel colors. */
+const ADF_PANEL_TYPES = new Set([
+  "info",
+  "note",
+  "warning",
+  "tip",
+  "success",
+  "error",
+]);
+
+/**
+ * Convert `<ac:adf-extension>` wrappers, the shape the current Confluence
+ * editor stores panels in:
+ *
+ *   <ac:adf-extension>
+ *     <ac:adf-node type="panel">
+ *       <ac:adf-attribute key="panel-type">note</ac:adf-attribute>
+ *       <ac:adf-content>…</ac:adf-content>
+ *     </ac:adf-node>
+ *     <ac:adf-fallback>…rendered HTML…</ac:adf-fallback>
+ *   </ac:adf-extension>
+ *
+ * Without this the generic `<ac:…>` unwrapping further down leaves the
+ * attribute *values* behind as body text (`note93a79b2c2404`) and emits the
+ * content twice — once from the node and once from the fallback.
+ */
+function replaceAdfExtensions(html: string): string {
+  const open = /<ac:adf-extension\b[^>]*?(\/?)>/gi;
+  let out = "";
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(html))) {
+    out += html.slice(cursor, m.index);
+    if (m[1] === "/") {
+      cursor = open.lastIndex;
+      continue;
+    }
+    const span = matchClose(html, open.lastIndex, "ac:adf-extension");
+    if (!span) {
+      out += m[0];
+      cursor = open.lastIndex;
+      continue;
+    }
+    out += convertAdfExtension(html.slice(open.lastIndex, span.contentEnd));
+    cursor = span.after;
+    open.lastIndex = cursor;
+  }
+  return out + html.slice(cursor);
+}
+
+function convertAdfExtension(inner: string): string {
+  const node = firstElement(inner, "ac:adf-node");
+  const fallback = firstElement(inner, "ac:adf-fallback");
+  const type = (node?.attrs.match(/\btype=["']([^"']+)["']/i)?.[1] || "")
+    .trim()
+    .toLowerCase();
+
+  if (node && type === "panel") {
+    const content = firstElement(node.content, "ac:adf-content")?.content ?? "";
+    const attr = (key: string) =>
+      (
+        node.content.match(
+          new RegExp(
+            `<ac:adf-attribute\\b[^>]*\\bkey=["']${key}["'][^>]*>([\\s\\S]*?)<\\/ac:adf-attribute>`,
+            "i",
+          ),
+        )?.[1] || ""
+      )
+        .replace(/<[^>]+>/g, "")
+        .trim()
+        .toLowerCase();
+    const panelType = attr("panel-type");
+    const color = ADF_PANEL_TYPES.has(panelType)
+      ? panelType
+      : attr("panel-color") || "info";
+    const icon = ADF_PANEL_TYPES.has(panelType) ? panelType : "panel";
+    return panelToken(color, icon, content);
+  }
+
+  // Unknown extension: prefer Confluence's own rendered fallback, which is
+  // plain HTML we can convert, over the ADF node's attribute soup.
+  if (fallback) {
+    return normalizeMacros(fallback.content);
+  }
+  const content = node
+    ? (firstElement(node.content, "ac:adf-content")?.content ?? "")
+    : inner;
+  return normalizeMacros(content);
+}
+
+/**
+ * Flatten durable tokens down to their visible text for plain-text slots such
+ * as image captions, and drop the brackets that would otherwise terminate the
+ * enclosing markdown construct early.
+ *
+ * Lossy by design: an inline macro inside a caption survives as its label, not
+ * as a macro. The alternative — leaking `MD_STATUS(yellow)[MVP]` into the alt
+ * text — breaks the image link itself.
+ */
+function flattenTokensToText(s: string): string {
+  return s
+    .replace(/MD_STATUS\(([^)]*)\)\[([\s\S]*?)\]/g, (_m, _c, t) =>
+      decodeURIComponent(String(t || "")),
+    )
+    .replace(
+      /MD_MENTION\(([^)]*)\)\[([\s\S]*?)\]/g,
+      (_m, id, vis) =>
+        decodeURIComponent(String(vis || "")) ||
+        decodeURIComponent(String(id || "")),
+    )
+    .replace(/MD_JIRA_LINK~~([^~]+)~~END/g, (_m, k) =>
+      decodeURIComponent(String(k || "")),
+    )
+    .replace(/MD_(?:PAGE|ATTACH|URL)_LINK~~[^~]+~~([^~]+)~~END/g, (_m, t) =>
+      decodeURIComponent(String(t || "")),
+    )
+    .replace(/MD_COMMENT\([^)]*\)/g, "")
+    .replace(/MD_CMT_(?:START|END)\([^)]*\)/g, "")
+    .replace(/[[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**

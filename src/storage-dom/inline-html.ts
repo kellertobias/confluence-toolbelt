@@ -13,6 +13,28 @@ export function inlineHtml(s: string): string {
   // as formatting. We swap them with a durable token during processing and
   // restore at the end.
   let out = String(s).replace(/\\\*/g, "MD_ESC_STAR");
+
+  /**
+   * Stash inline status lozenges (`<!-- status:color:Title -->`) behind
+   * placeholders before escaping, so they can be emitted as real status macros
+   * at the end. Only a status sitting alone on its own line used to be
+   * converted; every other one — mid-sentence, in a heading, in a list item,
+   * inside a panel — was escaped into literal `&lt;!-- status:… --&gt;` text
+   * and the macro was lost on upload.
+   */
+  const statuses: { color: string; title: string }[] = [];
+  out = out.replace(
+    /<!--\s*status:([^:>]+):([^>]*?)\s*-->/gi,
+    (_m, color: string, title: string) => {
+      const idx =
+        statuses.push({
+          color: String(color || "").trim(),
+          title: String(title || "").trim(),
+        }) - 1;
+      return `MD_STATUS_INLINE_${idx}_END`;
+    },
+  );
+
   out = escapeHtml(out);
 
   // Inline images ![alt](src) → Confluence image with 500px width
@@ -128,6 +150,15 @@ export function inlineHtml(s: string): string {
     /MD_CODE_SPAN_(\d+)_END/g,
     (_m, idx) => `<code>${codeSpans[Number(idx)] || ""}</code>`,
   );
+
+  // Restore stashed status lozenges as Confluence status macros.
+  out = out.replace(/MD_STATUS_INLINE_(\d+)_END/g, (_m, idx) => {
+    const st = statuses[Number(idx)];
+    if (!st) {
+      return "";
+    }
+    return `<ac:structured-macro ac:name="status"><ac:parameter ac:name="title">${escapeHtml(st.title)}</ac:parameter><ac:parameter ac:name="colour">${escapeHtml(st.color)}</ac:parameter></ac:structured-macro>`;
+  });
 
   // Restore literal asterisks
   out = out.replace(/MD_ESC_STAR/g, "*");

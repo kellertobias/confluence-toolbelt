@@ -16,6 +16,7 @@ import {
 } from "./commands.js";
 import type ConfluenceToolsPlugin from "./main.js";
 import { NewPageModal } from "./new-page-modal.js";
+import { DownloadTreeModal } from "./tree-modal.js";
 import {
   checkLocalChanges,
   computeState,
@@ -50,6 +51,8 @@ export class ConfluenceToolsView extends ItemView {
   private lastRemote: Remote = undefined;
   private progressMsg: string | null = null;
   private progressEl?: HTMLElement;
+  /** Signature of what is currently on screen; see `drawKey`. */
+  private drawnKey?: string;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -70,7 +73,12 @@ export class ConfluenceToolsView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.registerEvent(
-      this.app.workspace.on("active-leaf-change", () => void this.refresh()),
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        // Focusing this panel is not a note switch. Refreshing on it would
+        // rebuild the panel out from under the click that focused it.
+        if (leaf === this.leaf) return;
+        void this.refresh();
+      }),
     );
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
@@ -95,6 +103,7 @@ export class ConfluenceToolsView extends ItemView {
 
   async onClose(): Promise<void> {
     this.contentEl.empty();
+    this.drawnKey = undefined;
   }
 
   // -- data -----------------------------------------------------------------
@@ -151,9 +160,48 @@ export class ConfluenceToolsView extends ItemView {
 
   // -- rendering ------------------------------------------------------------
 
+  /**
+   * Everything `draw` puts on screen, as a comparable string.
+   *
+   * Redrawing replaces every element, so a redraw that lands between a button's
+   * mousedown and mouseup swallows the click. Skipping identical redraws keeps
+   * the buttons alive through the incidental refreshes (focus changes, metadata
+   * events, the periodic re-check) that don't change what is displayed.
+   */
+  private drawKey(
+    info: ActiveNoteInfo | null,
+    remote: Remote,
+    state: SyncState | "checking",
+  ): string {
+    return JSON.stringify([
+      !!this.plugin.settings.baseUrl,
+      this.busy,
+      state,
+      remote === undefined ? "?" : remote,
+      info && [
+        info.file.path,
+        info.pageId,
+        info.title,
+        info.localVersion ?? null,
+        info.modifiedLocally,
+        // The rendered wording, not the timestamp: "synced 2 minutes ago" has
+        // to keep ticking over on the periodic refresh.
+        info.downloadedAt ? relativeTime(info.downloadedAt) : "",
+      ],
+    ]);
+  }
+
   private draw(info: ActiveNoteInfo | null, remote: Remote): void {
     this.lastInfo = info;
     this.lastRemote = remote;
+
+    const state: SyncState | "checking" =
+      info && remote !== undefined ? computeState(info, remote) : "checking";
+    const key = this.drawKey(info, remote, state);
+    if (key === this.drawnKey && this.contentEl.childElementCount > 0) {
+      return; // nothing changed — leave the live DOM (and its buttons) alone
+    }
+    this.drawnKey = key;
 
     const root = this.contentEl;
     root.empty();
@@ -177,9 +225,6 @@ export class ConfluenceToolsView extends ItemView {
       });
       return;
     }
-
-    const state: SyncState | "checking" =
-      info && remote !== undefined ? computeState(info, remote) : "checking";
 
     if (info) {
       this.renderStatus(root, info, remote, state);
@@ -210,6 +255,9 @@ export class ConfluenceToolsView extends ItemView {
 
     this.action(root, "file-plus", "New page", false, () =>
       new NewPageModal(this.plugin, () => void this.refresh(true)).open(),
+    );
+    this.action(root, "folder-tree", "Download page tree", false, () =>
+      new DownloadTreeModal(this.plugin, () => void this.refresh(true)).open(),
     );
     this.action(root, "download-cloud", "Download all", false, () =>
       downloadAllCommand(this.plugin),
