@@ -422,14 +422,16 @@ describe("panel titles", () => {
     const { obsidian } = panelRoundTrip(
       ["> <!-- panel:note:note -->", "> **Scope** of this document"].join("\n"),
     );
-    expect(obsidian).toContain("> [!note]\n> **Scope** of this document");
+    expect(obsidian).toContain("> [!warning]\n> **Scope** of this document");
   });
 
   it("keeps a preserved color alongside the title", () => {
     const { obsidian, canonical } = panelRoundTrip(
       ["> <!-- panel:#eae6ff:panel -->", "> **Heads up**", ">", "> Body."].join("\n"),
     );
-    expect(obsidian).toContain("> [!info] %%cf:#eae6ff:panel%% Heads up");
+    // An unmapped colour falls back to the neutral callout, and the exact
+    // colour rides along in the marker.
+    expect(obsidian).toContain("> [!note] %%cf:#eae6ff:panel%% Heads up");
     expect(canonical).toContain("> <!-- panel:#eae6ff:panel -->");
     expect(canonical).toContain("> **Heads up**");
   });
@@ -439,6 +441,69 @@ describe("panel titles", () => {
       ["> <!-- panel:info:info -->", "> Just body text."].join("\n"),
     );
     expect(obsidian).toContain("> [!info]\n> Just body text.");
+  });
+});
+
+describe("panel colour mapping", () => {
+  const down = (panel: string): string =>
+    panelRoundTrip([`> <!-- panel:${panel}:${panel} -->`, "> Body."].join("\n"))
+      .obsidian;
+  const up = (callout: string): string =>
+    obsidianToCanonical(
+      ["---", 'pageId: "1"', "---", "", `> [!${callout}] T`, "> Body."].join("\n"),
+      { comments: {} },
+    );
+
+  it("maps Confluence panels onto the callout of the same colour", () => {
+    expect(down("info")).toContain("> [!info]"); // blue
+    expect(down("note")).toContain("> [!warning]"); // yellow
+    expect(down("success")).toContain("> [!tip]"); // green
+    expect(down("error")).toContain("> [!danger]"); // red
+    expect(down("warning")).toContain("> [!danger]"); // red (legacy macro)
+    expect(down("panel")).toContain("> [!note]"); // plain
+  });
+
+  it("maps callouts back onto the panel of the same colour", () => {
+    expect(up("info")).toContain("panel:info:info");
+    expect(up("warning")).toContain("panel:note:note");
+    expect(up("tip")).toContain("panel:success:success");
+    expect(up("danger")).toContain("panel:error:error");
+    expect(up("note")).toContain("panel:panel:panel");
+  });
+
+  it("accepts Obsidian's aliases for each type", () => {
+    for (const t of ["caution", "attention", "question", "help", "faq"])
+      expect(up(t)).toContain("panel:note:note");
+    for (const t of ["hint", "important", "success", "check", "done"])
+      expect(up(t)).toContain("panel:success:success");
+    for (const t of ["error", "failure", "fail", "missing", "bug"])
+      expect(up(t)).toContain("panel:error:error");
+  });
+
+  it("round-trips the types that map one-to-one without a marker", () => {
+    for (const p of ["info", "note", "success", "error", "panel"]) {
+      const { obsidian, canonical } = panelRoundTrip(
+        [`> <!-- panel:${p}:${p} -->`, "> Body."].join("\n"),
+      );
+      expect(obsidian).not.toContain("%%cf:");
+      expect(canonical).toContain(`> <!-- panel:${p}:${p} -->`);
+    }
+  });
+
+  it("preserves the types that collide, rather than changing their colour", () => {
+    // Both `tip` and `success` come down as [!tip], and both `warning` and
+    // `error` as [!danger] — so these two carry a marker to stay themselves.
+    for (const p of ["tip", "warning"]) {
+      const { obsidian, canonical } = panelRoundTrip(
+        [`> <!-- panel:${p}:${p} -->`, "> Body."].join("\n"),
+      );
+      expect(obsidian).toContain(`%%cf:${p}:${p}%%`);
+      expect(canonical).toContain(`> <!-- panel:${p}:${p} -->`);
+    }
+  });
+
+  it("falls back to a neutral panel for an unknown callout type", () => {
+    expect(up("quote")).toContain("panel:panel:panel");
   });
 });
 

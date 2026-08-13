@@ -698,6 +698,7 @@ badge[color="purple"],
 .callout[data-callout="tip"],
 .callout[data-callout="success"],
 .callout[data-callout="warning"],
+.callout[data-callout="danger"],
 .callout[data-callout="error"] {
   border: none;
   border-radius: 3px;
@@ -708,9 +709,10 @@ badge[color="purple"],
   --callout-color: 7, 71, 166;
   background-color: #deebff;
 }
+/* Plain Confluence panel: no colour, no icon. */
 .callout[data-callout="note"] {
-  --callout-color: 64, 50, 148;
-  background-color: #eae6ff;
+  --callout-color: 66, 82, 110;
+  background-color: #f4f5f7;
 }
 .callout[data-callout="tip"],
 .callout[data-callout="success"] {
@@ -721,6 +723,7 @@ badge[color="purple"],
   --callout-color: 23, 43, 77;
   background-color: #fffae6;
 }
+.callout[data-callout="danger"],
 .callout[data-callout="error"] {
   --callout-color: 191, 38, 0;
   background-color: #ffebe6;
@@ -731,8 +734,8 @@ badge[color="purple"],
   background-color: #0c294f;
 }
 .theme-dark .callout[data-callout="note"] {
-  --callout-color: 184, 172, 246;
-  background-color: #2b273f;
+  --callout-color: 159, 173, 188;
+  background-color: #282e33;
 }
 .theme-dark .callout[data-callout="tip"],
 .theme-dark .callout[data-callout="success"] {
@@ -743,6 +746,7 @@ badge[color="purple"],
   --callout-color: 245, 205, 71;
   background-color: #3b2e07;
 }
+.theme-dark .callout[data-callout="danger"],
 .theme-dark .callout[data-callout="error"] {
   --callout-color: 253, 152, 145;
   background-color: #42221f;

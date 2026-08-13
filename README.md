@@ -735,6 +735,25 @@ Confluence info/warning/note/tip panels use a special comment tag inside a block
 > Panel with a custom background color.
 ```
 
+**In the Obsidian plugin**, panels are callouts. The two are matched by colour
+rather than by name, because the vocabularies reuse the same words for
+different colours — Confluence's `note` is the yellow box, and its `warning` is
+red:
+
+| Obsidian callout | Confluence panel | Colour |
+| --- | --- | --- |
+| `[!info]` | `info` | blue |
+| `[!warning]` | `note` | yellow |
+| `[!tip]` | `success` | green |
+| `[!danger]` | `error` | red |
+| `[!note]` | plain `panel` | none |
+
+Obsidian's aliases work too — `caution`/`question` land on yellow,
+`hint`/`check`/`done` on green, `error`/`failure`/`bug` on red. Confluence's
+legacy `tip` and `warning` macros come down as `[!tip]` and `[!danger]`, and
+keep their exact type in a `%%cf:…%%` marker so re-uploading doesn't silently
+recolour them.
+
 ### Expand / Collapse Sections
 
 Wrap any block content in a pair of delimiters to get Confluence's `expand`

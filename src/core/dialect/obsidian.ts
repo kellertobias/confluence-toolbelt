@@ -77,14 +77,73 @@ export interface CanonicalToObsidianOptions {
   genId: () => string;
 }
 
-const KNOWN_PANELS = new Set([
-  "info",
-  "note",
-  "warning",
-  "tip",
-  "success",
-  "error",
-]);
+/**
+ * Confluence panel type → Obsidian callout type.
+ *
+ * Matched on colour rather than on name, because the two vocabularies use
+ * several of the same words for different colours. Confluence's `note` is the
+ * yellow "take care" box, which is Obsidian's `warning`; Confluence's `warning`
+ * is red, which is Obsidian's `danger`. Mapping by name — which is what this
+ * used to do — turned every yellow panel orange and every red one yellow.
+ *
+ * Confluence's plain `panel` (no colour, no icon) becomes `note`, Obsidian's
+ * neutral remark callout, which also gives the plain panel somewhere to live:
+ * it used to arrive as a blue info box carrying a preservation marker.
+ */
+const PANEL_TO_CALLOUT: Record<string, string> = {
+  info: "info", // blue
+  note: "warning", // yellow
+  success: "tip", // green
+  tip: "tip", // green
+  error: "danger", // red
+  warning: "danger", // red — the legacy macro, not ADF's yellow "warning"
+  panel: "note", // plain
+};
+
+/**
+ * Obsidian callout type → Confluence panel type, including the aliases
+ * Obsidian accepts for each of its own types.
+ *
+ * Not every entry round-trips: both `tip` and `success` come back from
+ * Confluence as `tip`, and both `error` and `warning` as `danger`. The pairs
+ * that cannot be inverted are preserved verbatim in the `%%cf:…%%` marker
+ * instead, so a page keeps the exact panel type it had.
+ */
+const CALLOUT_TO_PANEL: Record<string, string> = {
+  info: "info",
+  todo: "info",
+  warning: "note",
+  caution: "note",
+  attention: "note",
+  question: "note", // yellow in Obsidian
+  help: "note",
+  faq: "note",
+  tip: "success",
+  hint: "success",
+  important: "success",
+  success: "success",
+  check: "success",
+  done: "success",
+  danger: "error",
+  error: "error",
+  failure: "error",
+  fail: "error",
+  missing: "error",
+  bug: "error",
+  note: "panel",
+};
+
+/** Neutral fallback for a callout type we have no mapping for — a plain grey
+ * box reads better than asserting a colour the author didn't ask for. */
+const DEFAULT_PANEL = "panel";
+const DEFAULT_CALLOUT = "note";
+
+/** Whether a Confluence panel type survives the trip through Obsidian and
+ * back. When it doesn't, the exact type is carried in the `%%cf:…%%` marker. */
+function panelRoundTrips(color: string): boolean {
+  const callout = PANEL_TO_CALLOUT[color];
+  return callout !== undefined && CALLOUT_TO_PANEL[callout] === color;
+}
 
 // ---------------------------------------------------------------------------
 // Header ⇄ properties
@@ -189,8 +248,8 @@ function panelsToCallouts(body: string): string {
     const color = (m[1] ?? "").trim().toLowerCase();
     const icon = (m[2] ?? "").trim().toLowerCase();
     let title = stripBold(m[3]?.trim() ?? "");
-    const lossless = KNOWN_PANELS.has(color) && icon === color;
-    const calloutType = KNOWN_PANELS.has(color) ? color : "info";
+    const lossless = panelRoundTrips(color) && icon === color;
+    const calloutType = PANEL_TO_CALLOUT[color] ?? DEFAULT_CALLOUT;
     // Preserve exact color:icon when it can't be derived from the type alone.
     const meta = lossless ? "" : ` %%cf:${color}:${icon}%%`;
     if (!title) {
@@ -233,7 +292,7 @@ function calloutsToPanels(body: string): string {
       color = (c ?? calloutType).trim();
       icon = (ic ?? color).trim();
     } else {
-      color = KNOWN_PANELS.has(calloutType) ? calloutType : "info";
+      color = CALLOUT_TO_PANEL[calloutType] ?? DEFAULT_PANEL;
       icon = color;
     }
     out.push(`> <!-- panel:${color}:${icon} -->`);
