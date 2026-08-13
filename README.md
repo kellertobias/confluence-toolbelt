@@ -2,15 +2,15 @@
 
 # Toolbelt for AI Assisted Confluence Page Editing
 
-This repository contains the required tools to download Confluence pages as markdown files, let Cursor or other AI agents edit the pages, and then upload the changes back to Confluence including preserving (most) comments and mentions. A `sync` command (experimental) handles the common case where you edit a page locally while others are commenting or editing it remotely — it performs a three-way merge and uploads the result.
+Edit Confluence pages as markdown — in Obsidian, or from the command line with Cursor and other AI agents — and publish them back with comments, mentions and formatting intact.
 
-⚠️ This tool is completely Vibe coded - the code looks terrible and isn't really up to my coding standards. But it solves the problem I needed it for and the engineers in my company love it.
+The **[Obsidian plugin](#obsidian-plugin)** is the main way to use this. It brings the whole download/edit/upload workflow into your vault on desktop **and** mobile, in Obsidian-native markdown: properties, callouts, `%%` comments, wikilink and embed translation, locally rendered diagrams, and a git-free version-based merge.
 
-There is also an **Obsidian plugin** (⚠️ work in progress) that brings the same download/edit/upload workflow into an Obsidian vault (desktop **and** mobile), using Obsidian-native markdown — properties, callouts, `%%` comments, wikilink/embed translation, and a git-free version-based merge. See [Obsidian plugin](#obsidian-plugin) below.
+The **[CLI](#cli)** covers the same ground from a terminal, and is the right tool for scripting, bulk operations, and pointing an AI agent at a folder of pages. Both share one conversion core, so a page round-trips the same way through either.
+
+This tool is largely vibe coded. It solves the problem I needed it for, and the engineers in my company use it daily.
 
 ## Obsidian Plugin
-
-⚠️ **Work in progress.** The plugin is usable day-to-day but younger and less battle-tested than the CLI — expect rough edges, and keep an eye on your notes after download/upload until you trust it on your vault. Back up important pages before relying on it.
 
 The plugin lives in the same repo and is built to `plugin-dist/` (`main.js` + `manifest.json` + `versions.json`). Every GitHub release attaches these as assets, so you can install it straight from GitHub.
 
@@ -60,7 +60,7 @@ local changes** in the dialog if you want a hard reset from Confluence instead.
 
 Releases are produced by [`@semantic-release`](.releaserc.json) on every push to `main`: it computes the version from Conventional Commits, syncs `manifest.json`/`versions.json` ([version-bump.mjs](version-bump.mjs)), bundles the plugin, and attaches the assets to the GitHub release. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) builds, tests, type-checks, and bundles the plugin (including a node-builtin guard for mobile-safety) on every PR.
 
-## Usage and Use Cases
+## CLI
 
 ### Initial Setup
 
@@ -96,7 +96,7 @@ When downloading from a URL or pageId, the tool will:
 - Create a file named `YYMMDD-Title.md` (or use your custom path if provided) where the date is the last published date
 - Automatically commit the file to git
 
-⚠️ If you want a file to be read-only, you can add the `READONLY` flag to the header. This is helpful for reference pages and templates that should not be modified.
+To make a file read-only, add the `READONLY` flag to the header. This is helpful for reference pages and templates that should not be modified.
 
 ### Downloading a Whole Page Tree
 
@@ -136,9 +136,9 @@ falling back to git `HEAD`). Files that are provably unchanged are updated; file
 edits — or files the tool has no baseline for, such as hand-written notes — are skipped and
 listed at the end of the run. Pass `--force` to overwrite them anyway.
 
-### Syncing Changes (WIP, Currently being developed.)
+### Syncing Changes
 
-> ⚠️ **Experimental** — `sync` is new and less battle-tested than `download`/`upload`. Back up your files before using it on important pages.
+`sync` is newer than `download`/`upload` and has seen less mileage.
 
 `sync` is the recommended workflow when you edit a page locally while others may be commenting or editing it on Confluence at the same time. It performs a three-way merge (your local edits + new remote comments/edits + the last-known base) and then uploads the result.
 
@@ -651,10 +651,9 @@ behaviour depends on whether the page already has an image:
 - **Already uploaded once:** the existing attachment is reused untouched and the
   upload proceeds. Editing a page's text from your phone never destroys a
   diagram rendered on desktop.
-- **Never uploaded:** the upload is refused with a notice naming the drawings.
-  Publishing a page whose diagrams silently vanished is worse than not
-  publishing it. Upload once from a desktop vault with Excalidraw enabled; after
-  that, edits from anywhere are fine.
+- **Never uploaded:** the upload stops with a notice naming the drawings, rather
+  than publishing a page with missing diagrams. Upload once from a desktop vault
+  with Excalidraw enabled; after that, edits from anywhere are fine.
 
 This is plugin-only — the CLI has no Excalidraw to render with, and leaves such
 embeds untouched.
@@ -663,7 +662,7 @@ embeds untouched.
 
 Mermaid code blocks are automatically rendered as images on Confluence. No Confluence plugins required.
 
-**In the Obsidian plugin** the diagram is rendered locally, using a bundled mermaid, and uploaded as a page attachment. The published page is then self-contained. **The CLI** has no browser to rasterize with, so it emits an image URL pointing at [mermaid.ink](https://mermaid.ink) instead — which means the diagram source travels to that third-party service inside the URL, and Confluence re-fetches the image on every page view. If that matters for your content, upload those pages from the plugin. The plugin also falls back to the URL if a diagram fails to render, rather than failing the upload.
+**In the Obsidian plugin** the diagram is rendered locally, using a bundled mermaid, and uploaded as a page attachment — so the published page is self-contained. **The CLI** has no browser to rasterize with and emits an image URL pointing at [mermaid.ink](https://mermaid.ink) instead, which carries the diagram source in the URL and is re-fetched by Confluence on each page view. The plugin uses the same URL as a fallback if a diagram fails to render, so a broken diagram costs the local rendering rather than the upload.
 
 ````markdown
 ```mermaid
@@ -814,7 +813,7 @@ These tags round-trip through download/upload and map to Confluence's inline com
 
 When downloading, the tool also fetches the actual comment text and author and embeds them as a separate `<!-- # Author: Text -->` comment directly after the marker tag to give you context during editing. These injected text comments are automatically stripped when uploading to avoid cluttering the Confluence page.
 
-When using `sync`, comments whose anchor text was deleted locally are moved to a `# Detached Comments` section at the end of the file rather than lost. See the [Syncing Changes](#syncing-changes-experimental) section for details.
+When using `sync`, comments whose anchor text was deleted locally are moved to a `# Detached Comments` section at the end of the file rather than lost. See the [Syncing Changes](#syncing-changes) section for details.
 
 ### Node ID Tags
 
