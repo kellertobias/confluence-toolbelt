@@ -1,3 +1,9 @@
+## <small>2.13.1 (2026-08-13)</small>
+
+* fix(obsidian): map panel colours instead of panel names ([4016d2d](https://github.com/kellertobias/confluence-toolbelt/commit/4016d2d))
+* Merge origin/main (2.13.0 release) ([806cccd](https://github.com/kellertobias/confluence-toolbelt/commit/806cccd))
+* docs: lead with the plugin, drop the alarm ([c7e5b6f](https://github.com/kellertobias/confluence-toolbelt/commit/c7e5b6f))
+
 ## 2.13.0 (2026-08-13)
 
 * docs: show the plugin's side panel in the README ([da25fb7](https://github.com/kellertobias/confluence-toolbelt/commit/da25fb7))
