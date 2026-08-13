@@ -2738,3 +2738,50 @@ describe('mermaid attachments', () => {
     expect(findMermaidSources('```sql\nSELECT 1\n```')).toEqual([]);
   });
 });
+
+describe('markdown escapes', () => {
+  const md = (html: string) =>
+    storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n\n');
+  const trip = (text: string) => md(markdownToStorageHtml(text));
+
+  it('does not carry escapes into storage', () => {
+    // Storage HTML is not markdown; a backslash there gets escaped again on
+    // the next download, and the run grows on every round-trip.
+    expect(markdownToStorageHtml('See \\[3\\] here.')).toContain('See [3] here.');
+  });
+
+  it('reaches a fixed point instead of doubling', () => {
+    const first = trip('See [[3]](#sources) for details.');
+    expect(trip(first)).toBe(first);
+    expect(trip(trip(first))).toBe(first);
+    expect(first).not.toContain('\\\\');
+  });
+
+  it('heals a page whose escapes already multiplied', () => {
+    const damaged = 'See \\\\\\[\\\\\\[3\\\\\\]\\\\\\](#sources) for details.';
+    const healed = trip(trip(damaged));
+    expect(healed).not.toContain('\\\\');
+    expect(trip(healed)).toBe(healed);
+  });
+
+  it('makes a bracketed citation a real link', () => {
+    // `[[3]](#sources)` is a link labelled `[3]`, not a stray bracket followed
+    // by a link labelled `3`.
+    expect(markdownToStorageHtml('See [[3]](#sources).')).toContain(
+      '<a href="#sources">[3]</a>',
+    );
+  });
+
+  it('keeps escapes inside code, where they are content', () => {
+    const text = 'Use `arr\\[0\\]` for that.';
+    expect(trip(text)).toContain('arr\\[0\\]');
+  });
+
+  it('keeps a backslash that is not an escape', () => {
+    expect(markdownToStorageHtml('Path C:\\Users\\me and \\(x\\)')).toContain(
+      'C:\\Users\\me',
+    );
+  });
+});

@@ -42,6 +42,49 @@ export function wikiLinksToCanonical(
 }
 
 /**
+ * `[text](Note.md)` → `[text](pageid:ID)` when the note is a Confluence page.
+ *
+ * Obsidian writes links this way when "Use [[Wikilinks]]" is off, and they used
+ * to reach Confluence untranslated — as an `<a href="Some%20Note.md">`, a
+ * relative path to a file that does not exist on the server. The link looked
+ * fine in the vault and was dead on the published page.
+ *
+ * Only vault-relative `.md` targets are touched: anything carrying a URL scheme
+ * or a fragment is left alone, and so is a note that has never been published,
+ * since there is nothing to point at.
+ */
+export function mdNoteLinksToCanonical(
+  body: string,
+  resolveNote: (noteName: string) => string | null,
+): string {
+  // Negative lookbehind avoids matching image embeds (![…](…)).
+  return body.replace(
+    /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g,
+    (full, text: string, href: string) => {
+      const target = href.trim();
+      if (!/\.md$/i.test(target)) return full;
+      // A scheme (https:, pageid:, mailto:) or a fragment is not a vault path.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("#")) {
+        return full;
+      }
+      let path: string;
+      try {
+        path = decodeURIComponent(target);
+      } catch {
+        // A stray `%` that isn't an escape — take the target as written.
+        path = target;
+      }
+      const name = path
+        .slice(path.lastIndexOf("/") + 1)
+        .replace(/\.md$/i, "")
+        .trim();
+      const id = resolveNote(name);
+      return id ? `[${text}](pageid:${id})` : full;
+    },
+  );
+}
+
+/**
  * Split an Obsidian embed target into filename and display hint.
  *
  * `![[Diagram.png|100%]]` names the attachment `Diagram.png` and asks Obsidian

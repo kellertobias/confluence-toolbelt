@@ -7,6 +7,7 @@
  */
 
 import { decodeBasicEntities, escapeHtml } from "./html-utils.js";
+import { unescapeMarkdownPunctuation } from "./markdown-escapes.js";
 
 export function inlineHtml(s: string): string {
   // Protect escaped asterisks so they remain literal and are not interpreted
@@ -59,6 +60,12 @@ export function inlineHtml(s: string): string {
     return `MD_CODE_SPAN_${idx}_END`;
   });
 
+  // Markdown escapes are syntax, not content: they must not reach storage, or
+  // the next download escapes the backslash itself and the run grows on every
+  // round-trip. Done here so code spans (already stashed) keep theirs, and
+  // before the link pass so an escaped `[` can still close a link's text.
+  out = unescapeMarkdownPunctuation(out);
+
   // Bold
   out = out.replace(
     /\*\*([^*]+)\*\*/g,
@@ -93,57 +100,63 @@ export function inlineHtml(s: string): string {
    * to the appropriate Confluence <ac:link> format, falling back to <a href>
    * for regular URLs.
    */
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
-    const hrefStr = String(href || "");
+  // The link text may itself contain a bracketed run — a numbered citation
+  // like `[[3]](#sources)` is a link labelled `[3]`. Matching only up to the
+  // first `]` split that into a stray bracket followed by a link labelled `3`.
+  out = out.replace(
+    /\[((?:[^[\]]|\[[^[\]]*\])+)\]\(([^)]+)\)/g,
+    (_m, text, href) => {
+      const hrefStr = String(href || "");
 
-    // Page links by ID: [text](pageid:12345) or [text](pageid:SPACE:12345)
-    // Always use ri:content-entity — content IDs are globally unique and
-    // ri:page does NOT support ri:content-id (Confluence silently strips it).
-    if (hrefStr.startsWith("pageid:")) {
-      const rest = hrefStr.slice(7);
-      const plainText = decodeBasicEntities(String(text));
-      const colonIdx = rest.indexOf(":");
-      // pageid:SPACE:ID → strip space key, use content-entity with ID only
-      const contentId = colonIdx > 0 ? rest.slice(colonIdx + 1) : rest;
-      return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
-    }
-
-    // Page links by title or ID: [text](page:PageTitle) or [text](page:SPACE:PageTitle).
-    // When the third segment is all-numeric it is treated as a page ID and
-    // stored as a content-entity (rename-proof). The space key is dropped
-    // because ri:content-entity has no space-key attribute; users who need
-    // a space-qualified ID link should use the pageid: scheme instead.
-    if (hrefStr.startsWith("page:")) {
-      const pageRef = hrefStr.slice(5);
-      const parts = pageRef.split(":");
-      const plainText = decodeBasicEntities(String(text));
-      if (parts.length >= 2 && parts[0]) {
-        const spaceKey = parts[0];
-        const titleOrId = parts.slice(1).join(":");
-        if (/^\d+$/.test(titleOrId)) {
-          // Numeric ID → content-entity (ri:page does not support ri:content-id)
-          return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
-        }
-        return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+      // Page links by ID: [text](pageid:12345) or [text](pageid:SPACE:12345)
+      // Always use ri:content-entity — content IDs are globally unique and
+      // ri:page does NOT support ri:content-id (Confluence silently strips it).
+      if (hrefStr.startsWith("pageid:")) {
+        const rest = hrefStr.slice(7);
+        const plainText = decodeBasicEntities(String(text));
+        const colonIdx = rest.indexOf(":");
+        // pageid:SPACE:ID → strip space key, use content-entity with ID only
+        const contentId = colonIdx > 0 ? rest.slice(colonIdx + 1) : rest;
+        return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(contentId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
       }
-      return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
-    }
 
-    // Jira issue links: [PROJ-123](jira:PROJ-123)
-    if (hrefStr.startsWith("jira:")) {
-      const key = hrefStr.slice(5);
-      return `<ac:structured-macro ac:name="jira"><ac:parameter ac:name="key">${escapeHtml(key)}</ac:parameter></ac:structured-macro>`;
-    }
+      // Page links by title or ID: [text](page:PageTitle) or [text](page:SPACE:PageTitle).
+      // When the third segment is all-numeric it is treated as a page ID and
+      // stored as a content-entity (rename-proof). The space key is dropped
+      // because ri:content-entity has no space-key attribute; users who need
+      // a space-qualified ID link should use the pageid: scheme instead.
+      if (hrefStr.startsWith("page:")) {
+        const pageRef = hrefStr.slice(5);
+        const parts = pageRef.split(":");
+        const plainText = decodeBasicEntities(String(text));
+        if (parts.length >= 2 && parts[0]) {
+          const spaceKey = parts[0];
+          const titleOrId = parts.slice(1).join(":");
+          if (/^\d+$/.test(titleOrId)) {
+            // Numeric ID → content-entity (ri:page does not support ri:content-id)
+            return `<ac:link><ri:content-entity ri:content-id="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+          }
+          return `<ac:link><ri:page ri:space-key="${escapeHtml(spaceKey)}" ri:content-title="${escapeHtml(titleOrId)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+        }
+        return `<ac:link><ri:page ri:content-title="${escapeHtml(pageRef)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+      }
 
-    // Attachment links: [text](#attachment:filename.pdf)
-    if (hrefStr.startsWith("#attachment:")) {
-      const filename = hrefStr.slice(12);
-      const plainText = decodeBasicEntities(String(text));
-      return `<ac:link><ri:attachment ri:filename="${escapeHtml(filename)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
-    }
+      // Jira issue links: [PROJ-123](jira:PROJ-123)
+      if (hrefStr.startsWith("jira:")) {
+        const key = hrefStr.slice(5);
+        return `<ac:structured-macro ac:name="jira"><ac:parameter ac:name="key">${escapeHtml(key)}</ac:parameter></ac:structured-macro>`;
+      }
 
-    return `<a href="${escapeHtml(hrefStr)}">${text}</a>`;
-  });
+      // Attachment links: [text](#attachment:filename.pdf)
+      if (hrefStr.startsWith("#attachment:")) {
+        const filename = hrefStr.slice(12);
+        const plainText = decodeBasicEntities(String(text));
+        return `<ac:link><ri:attachment ri:filename="${escapeHtml(filename)}"/><ac:plain-text-link-body><![CDATA[${plainText}]]></ac:plain-text-link-body></ac:link>`;
+      }
+
+      return `<a href="${escapeHtml(hrefStr)}">${text}</a>`;
+    },
+  );
 
   // Restore code spans that were stashed before bold/italic processing.
   out = out.replace(

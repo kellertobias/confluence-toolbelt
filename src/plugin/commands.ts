@@ -17,6 +17,7 @@ import {
   canonicalImagesToEmbeds,
   canonicalLinksToWiki,
   embedsToCanonicalImages,
+  mdNoteLinksToCanonical,
   wikiLinksToCanonical,
 } from "../core/dialect/links.js";
 import {
@@ -889,6 +890,11 @@ export async function uploadCommand(
     // Translate [[wikilinks]] → pageid: links and ![[embeds]] → attachment refs.
     const index = buildPageIndex(plugin.app);
     let canonicalish = wikiLinksToCanonical(drawn.markdown, (n) =>
+      index.noteToId(n),
+    );
+    // …and the markdown-link form Obsidian writes when wikilinks are off, which
+    // otherwise published as a relative path to a file Confluence doesn't have.
+    canonicalish = mdNoteLinksToCanonical(canonicalish, (n) =>
       index.noteToId(n),
     );
     // Rebuilt from scratch each upload so the map mirrors the note exactly and

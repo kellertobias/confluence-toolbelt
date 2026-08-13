@@ -42,6 +42,15 @@ export function unescapeMarkdownUnderscores(md: string): string {
    * in Confluence, and Turndown's safety escape is cosmetic noise.
    */
   out = out.replace(/\\(-{3,})/g, "$1");
+  /**
+   * Step 7: collapse any remaining backslash run before punctuation down to
+   * one, the general form of steps 2 and 3.
+   *
+   * Heals pages already damaged by escapes having been copied into storage and
+   * re-escaped on every download: fixing the upload side stops the run growing,
+   * but only this shortens one that already has.
+   */
+  out = collapseEscapeRuns(out);
   return out;
 }
 
@@ -69,4 +78,35 @@ function unescapeAsterisksInsideCode(markdown: string): string {
     span.replace(/\\\*/g, "*"),
   );
   return processed;
+}
+
+/**
+ * Drop the backslashes markdown uses to escape punctuation, on the way *into*
+ * Confluence storage.
+ *
+ * Storage HTML is not markdown, so an escape has no meaning there — but it used
+ * to be copied in verbatim. Turndown then escaped the backslash itself on the
+ * next download, so every round-trip doubled it: `\[3\]` became `\\\[3\\\]`,
+ * then `\\\\\\\[3\\\\\\\]`, until the text was unreadable and the link it
+ * belonged to no longer parsed.
+ *
+ * Only punctuation markdown actually escapes is unescaped, so a backslash in
+ * prose (`C:\Users`, a LaTeX macro) is left alone. Callers must run this after
+ * code spans are stashed and before fenced blocks are emitted — an escape
+ * inside code is content, not syntax.
+ */
+export function unescapeMarkdownPunctuation(md: string): string {
+  return md.replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, "$1");
+}
+
+/**
+ * Collapse runs of backslashes before punctuation down to one, on the way out
+ * of Confluence storage.
+ *
+ * Repairs pages already damaged by the doubling above: without this they would
+ * keep whatever depth of escaping they had accumulated, since the fix on the
+ * upload side only stops it getting worse.
+ */
+export function collapseEscapeRuns(md: string): string {
+  return md.replace(/\\{2,}([`*_{}[\]()#+\-.!>~|])/g, "\\$1");
 }

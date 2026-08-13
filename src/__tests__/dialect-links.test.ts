@@ -4,6 +4,7 @@ import {
   canonicalImagesToEmbeds,
   canonicalLinksToWiki,
   embedsToCanonicalImages,
+  mdNoteLinksToCanonical,
   wikiLinksToCanonical,
 } from "../core/dialect/links.js";
 
@@ -94,5 +95,46 @@ describe("image embed translation", () => {
     expect(wikiLinksToCanonical("![[pic.png]]", () => "999")).toBe(
       "![[pic.png]]",
     );
+  });
+});
+
+describe("markdown links to vault notes", () => {
+  const resolve = (n: string) => (n === "Design Rules" ? "999" : null);
+
+  it("translates a .md link into a page link", () => {
+    expect(mdNoteLinksToCanonical("see [the rules](Design Rules.md)", resolve)).toBe(
+      "see [the rules](pageid:999)",
+    );
+  });
+
+  it("decodes a percent-escaped filename", () => {
+    // What Obsidian writes for a title with spaces — it used to publish as a
+    // relative path to a file Confluence does not have.
+    expect(
+      mdNoteLinksToCanonical("[x](Design%20Rules.md)", resolve),
+    ).toBe("[x](pageid:999)");
+  });
+
+  it("resolves a note inside a folder by its basename", () => {
+    expect(
+      mdNoteLinksToCanonical("[x](Corporate/Projects/Design Rules.md)", resolve),
+    ).toBe("[x](pageid:999)");
+  });
+
+  it("leaves a note that is not a Confluence page alone", () => {
+    const md = "[x](Some Local Note.md)";
+    expect(mdNoteLinksToCanonical(md, resolve)).toBe(md);
+  });
+
+  it("leaves external links, fragments and images alone", () => {
+    for (const md of [
+      "[x](https://example.com/Design Rules.md)",
+      "[x](#sources)",
+      "[x](pageid:123)",
+      "![x](Design Rules.md)",
+      "[x](diagram.png)",
+    ]) {
+      expect(mdNoteLinksToCanonical(md, resolve)).toBe(md);
+    }
   });
 });
