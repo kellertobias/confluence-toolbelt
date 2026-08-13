@@ -55,6 +55,11 @@ export interface ObsidianSidecar {
   images?: Record<string, string>;
   /** Embed filename → last-uploaded content hash, to skip unchanged images. */
   imageHashes?: Record<string, string>;
+  /** Rendered-diagram attachment filename → the vault embed target it came
+   * from (`"Architecture.png" → "Architecture.excalidraw"`). Confluence only
+   * ever sees the PNG; this is what lets download restore the link to the
+   * editable drawing instead of leaving the note pointing at the render. */
+  diagrams?: Record<string, string>;
   /** Confluence marker refs (UUIDs) of comments resolved locally — filtered out
    * on re-download so they don't reappear. */
   resolved?: string[];

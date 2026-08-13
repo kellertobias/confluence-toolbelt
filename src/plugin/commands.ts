@@ -19,6 +19,14 @@ import {
   embedsToCanonicalImages,
   wikiLinksToCanonical,
 } from "../core/dialect/links.js";
+import {
+  findExcalidrawEmbeds,
+  pruneDiagramMap,
+  renderedNameFor,
+  restoreExcalidrawEmbeds,
+  rewriteExcalidrawEmbeds,
+  sourceNameFor,
+} from "../core/dialect/diagrams.js";
 import { parseHeader } from "../md-header.js";
 import { hasUnresolvedConflicts } from "../sync/conflict.js";
 import { downloadReferencedAttachments } from "../core/pipeline/attachment-download.js";
@@ -133,6 +141,99 @@ async function uploadReferencedImages(
   }
 }
 
+/**
+ * Render every Excalidraw embed to a PNG attachment and point the embeds at the
+ * rendered images, uploading the drawing source alongside each one.
+ *
+ * Confluence has no notion of an Excalidraw drawing, so an embed that reaches
+ * it untranslated is simply a broken image. Rendering happens here rather than
+ * in the storage converter because it needs the vault (to find the drawing) and
+ * the Excalidraw plugin (to draw it) — neither of which the pure core has.
+ *
+ * Returns the drawings that could neither be rendered nor satisfied by an
+ * earlier upload. The caller refuses the upload in that case: publishing a page
+ * whose diagrams silently vanished is worse than not publishing it.
+ */
+async function renderExcalidrawEmbeds(
+  plugin: ConfluenceToolsPlugin,
+  note: TFile,
+  pageId: string,
+  markdown: string,
+  sidecar: {
+    diagrams?: Record<string, string>;
+    imageHashes?: Record<string, string>;
+  },
+): Promise<{ markdown: string; unrenderable: string[] }> {
+  const targets = findExcalidrawEmbeds(markdown);
+  if (!targets.length) return { markdown, unrenderable: [] };
+
+  const ctx = plugin.buildContext();
+  const client = plugin.client();
+  const renderer = ctx.diagrams;
+  const canRender = renderer?.available() ?? false;
+
+  // Drop entries for diagrams no longer embedded, so the map can't resurrect a
+  // deleted drawing's link if an unrelated attachment reuses its filename.
+  sidecar.diagrams = pruneDiagramMap(markdown, sidecar.diagrams ?? {});
+  sidecar.imageHashes = sidecar.imageHashes ?? {};
+
+  const rendered = new Map<string, string>();
+  const unrenderable: string[] = [];
+
+  for (const target of targets) {
+    const name = renderedNameFor(target);
+    const file = plugin.app.metadataCache.getFirstLinkpathDest(
+      target,
+      note.path,
+    );
+
+    // No Excalidraw (mobile, or the plugin is disabled), or the drawing isn't
+    // in this vault. If an earlier upload already produced this image, the
+    // attachment on the page is still correct — keep pointing at it rather than
+    // blocking an unrelated text edit. Only a diagram that has never been
+    // rendered stops the upload.
+    const png =
+      canRender && file ? await renderer?.renderPng(file.path, 2) : null;
+    if (!png) {
+      if (sidecar.diagrams[name] === target) rendered.set(target, name);
+      else unrenderable.push(target);
+      continue;
+    }
+
+    const hash = await ctx.hasher.sha256Hex(png);
+    if (sidecar.imageHashes[name] !== hash) {
+      await client.uploadAttachment(pageId, name, png, "image/png");
+      sidecar.imageHashes[name] = hash;
+
+      // The drawing source rides along so it can be recovered into another
+      // vault. Confluence never renders it — it is an archive copy, refreshed
+      // only when the image it belongs to actually changed.
+      if (file) {
+        const srcName = sourceNameFor(target);
+        const srcBytes = new TextEncoder().encode(
+          await plugin.app.vault.read(file),
+        );
+        const srcHash = await ctx.hasher.sha256Hex(srcBytes);
+        if (sidecar.imageHashes[srcName] !== srcHash) {
+          await client.uploadAttachment(
+            pageId,
+            srcName,
+            srcBytes,
+            "text/markdown",
+          );
+          sidecar.imageHashes[srcName] = srcHash;
+        }
+      }
+    }
+    rendered.set(target, name);
+  }
+
+  return {
+    markdown: rewriteExcalidrawEmbeds(markdown, rendered, sidecar.diagrams),
+    unrenderable,
+  };
+}
+
 /** Apply link/image translation and write a downloaded page + sidecar to a note
  * path. Shared by single-page download, create, and download-all. */
 async function writeDownloadedPage(
@@ -144,12 +245,31 @@ async function writeDownloadedPage(
   const ctx = plugin.buildContext();
   const index = buildPageIndex(plugin.app);
   result.sidecar.images = result.sidecar.images ?? {};
+  // Read the prior sidecar first: the diagram map lives there, and the embeds
+  // have to be restored before anything downstream reads the body.
+  const prior = await readSidecar(ctx.fs, ctx.path, notePath);
   let markdown = canonicalLinksToWiki(result.markdown, (id) =>
     index.idToNote(id),
   );
   markdown = canonicalImagesToEmbeds(markdown, result.sidecar.images);
+  // Point rendered-diagram embeds back at the drawings they came from. Doing it
+  // here — before the note is written and before attachments are fetched —
+  // means the rendered PNG is never written into the vault as a stray file, and
+  // the link the user edits is always the drawing.
+  if (prior?.diagrams) {
+    result.sidecar.diagrams = prior.diagrams;
+    markdown = restoreExcalidrawEmbeds(markdown, prior.diagrams);
+  }
+  // Keep the recorded attachment hashes: a diagram's PNG is deliberately not
+  // re-downloaded, so without this its hash would be lost and the next upload
+  // would re-render and re-upload an identical image.
+  if (prior?.imageHashes) {
+    result.sidecar.imageHashes = {
+      ...prior.imageHashes,
+      ...(result.sidecar.imageHashes ?? {}),
+    };
+  }
   // Carry over any locally-resolved comment refs from a prior sidecar.
-  const prior = await readSidecar(ctx.fs, ctx.path, notePath);
   if (prior?.resolved?.length) {
     result.sidecar.resolved = [
       ...new Set([...(result.sidecar.resolved ?? []), ...prior.resolved]),
@@ -691,13 +811,39 @@ export async function uploadCommand(
 
   const progress = new Progress(plugin, "Upload");
   try {
-    progress.start("Uploading images…");
+    progress.start("Rendering diagrams…");
+    // Excalidraw drawings become PNG attachments, and their embeds are
+    // rewritten to name the render so the attachment translation below carries
+    // them like any other image. `markdown` itself is left alone — it is what
+    // is on disk, and it stays the change-gutter base further down.
+    const drawn = await renderExcalidrawEmbeds(
+      plugin,
+      file,
+      pageId,
+      markdown,
+      sidecar,
+    );
+    if (drawn.unrenderable.length) {
+      progress.cancel();
+      new Notice(
+        `Upload cancelled — no image available for ${drawn.unrenderable.join(", ")}. ` +
+          `These drawings have never been uploaded from this page, and Excalidraw isn't ` +
+          `available here to render them. Upload once from a desktop vault with the ` +
+          `Excalidraw plugin enabled; after that, edits from anywhere are fine.`,
+        15000,
+      );
+      return;
+    }
+
+    progress.step("Uploading images…");
     // Upload referenced vault images as attachments (skipping unchanged ones).
-    await uploadReferencedImages(plugin, file, pageId, markdown, sidecar);
+    await uploadReferencedImages(plugin, file, pageId, drawn.markdown, sidecar);
 
     // Translate [[wikilinks]] → pageid: links and ![[embeds]] → attachment refs.
     const index = buildPageIndex(plugin.app);
-    let canonicalish = wikiLinksToCanonical(markdown, (n) => index.noteToId(n));
+    let canonicalish = wikiLinksToCanonical(drawn.markdown, (n) =>
+      index.noteToId(n),
+    );
     canonicalish = embedsToCanonicalImages(canonicalish, sidecar.images);
 
     const result = await uploadObsidianPage(
@@ -724,6 +870,10 @@ export async function uploadCommand(
         conflictMd,
         conv.sidecar.images ?? {},
       );
+      // The merged document came back from Confluence naming the rendered PNGs;
+      // restore the drawing links so resolving a conflict doesn't cost the user
+      // their editable diagrams.
+      conflictMd = restoreExcalidrawEmbeds(conflictMd, sidecar.diagrams);
       await plugin.app.vault.modify(file, conflictMd);
       sidecar.comments = conv.sidecar.comments;
       await writeSidecar(ctx.fs, ctx.path, file.path, sidecar);

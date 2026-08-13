@@ -131,6 +131,23 @@ export interface Deflater {
   zlib(data: Uint8Array): Uint8Array;
 }
 
+/** Renders an Excalidraw drawing from the vault to a raster image.
+ *
+ * Only the Obsidian plugin can implement this — rendering goes through the
+ * Excalidraw plugin's own `ExcalidrawAutomate` API, which has no equivalent
+ * outside the app. The CLI leaves this undefined, and the upload path then
+ * treats every drawing as unrenderable (see `uploadCommand`). */
+export interface DiagramRenderer {
+  /** True when the Excalidraw plugin is installed, enabled, and exposing its
+   * automation API. Checked per upload, not cached — the user can toggle the
+   * plugin at any time. */
+  available(): boolean;
+  /** Render the drawing at `path` (a vault-relative note path) to PNG bytes.
+   * Returns null when the file isn't a drawing or rendering failed; the caller
+   * distinguishes that from `available() === false`. */
+  renderPng(path: string, scale: number): Promise<Uint8Array | null>;
+}
+
 export interface ConfluenceConfig {
   baseUrl: string;
   email?: string;
@@ -150,4 +167,6 @@ export interface CoreContext {
   git: Git;
   prompter: Prompter;
   config: ConfluenceConfig;
+  /** Absent on the CLI, where Excalidraw rendering is impossible. */
+  diagrams?: DiagramRenderer;
 }

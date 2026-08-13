@@ -613,6 +613,48 @@ Indented code blocks (4+ spaces) are also supported:
     console.log(x);
 ```
 
+### Excalidraw Diagrams (Obsidian plugin only)
+
+Excalidraw drawings embedded in a note are rendered to PNG and attached to the
+Confluence page on upload:
+
+```markdown
+![[Architecture.excalidraw]]
+```
+
+becomes an `Architecture.png` attachment shown inline on the page. The drawing
+source is uploaded alongside it as `Architecture.excalidraw.md`, so the editable
+original travels with the page and can be dropped into another vault.
+
+**Your local link survives the round-trip.** Confluence only ever sees the PNG,
+but the mapping `Architecture.png → Architecture.excalidraw` is recorded in the
+note's sidecar, so downloading the page restores `![[Architecture.excalidraw]]`
+rather than leaving the note pointing at the render. The rendered PNG is never
+written into your vault, and any size hint (`![[Architecture.excalidraw|400]]`)
+is preserved. Someone else downloading the same page has no such mapping and
+correctly keeps `![[Architecture.png]]` — they have no drawing to link to.
+
+Rendering goes through the [Excalidraw
+plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin)'s own
+`ExcalidrawAutomate` API rather than a bundled copy of Excalidraw, so what
+Confluence receives is exactly what you see in your vault. Images are rendered
+at 2× scale on a light theme (Confluence pages are light), and re-uploaded only
+when the drawing actually changed.
+
+Where Excalidraw isn't available — mobile, or the plugin disabled — the
+behaviour depends on whether the page already has an image:
+
+- **Already uploaded once:** the existing attachment is reused untouched and the
+  upload proceeds. Editing a page's text from your phone never destroys a
+  diagram rendered on desktop.
+- **Never uploaded:** the upload is refused with a notice naming the drawings.
+  Publishing a page whose diagrams silently vanished is worse than not
+  publishing it. Upload once from a desktop vault with Excalidraw enabled; after
+  that, edits from anywhere are fine.
+
+This is plugin-only — the CLI has no Excalidraw to render with, and leaves such
+embeds untouched.
+
 ### Mermaid Diagrams
 
 Mermaid code blocks are automatically rendered as images on Confluence using [mermaid.ink](https://mermaid.ink). No Confluence plugins required.

@@ -10,6 +10,7 @@ import { Plugin, type WorkspaceLeaf } from "obsidian";
 
 import { fflateDeflater } from "../adapters/obsidian/deflate.js";
 import { browserDom } from "../adapters/obsidian/dom.js";
+import { createExcalidrawRenderer } from "../adapters/obsidian/excalidraw.js";
 import { noopGit } from "../adapters/obsidian/git.js";
 import { subtleHasher } from "../adapters/obsidian/hasher.js";
 import { obsidianHttp } from "../adapters/obsidian/http.js";
@@ -194,6 +195,7 @@ export default class ConfluenceToolsPlugin extends Plugin {
       git: noopGit,
       prompter: obsidianPrompter(this.app),
       config: this.confluenceConfig(),
+      diagrams: createExcalidrawRenderer(this.app),
     };
   }
 
