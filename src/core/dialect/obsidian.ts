@@ -53,6 +53,10 @@ export interface ObsidianSidecar {
   links?: Record<string, string>;
   /** Embed filename → caption, so attachment captions round-trip. */
   images?: Record<string, string>;
+  /** Embed filename → Obsidian display hint (`"100%"`, `"400"`), so
+   * `![[Diagram.png|100%]]` survives the round-trip. Confluence has no
+   * equivalent, and the hint is not part of the attachment name. */
+  embedSizes?: Record<string, string>;
   /** Embed filename → last-uploaded content hash, to skip unchanged images. */
   imageHashes?: Record<string, string>;
   /** Rendered-diagram attachment filename → the vault embed target it came

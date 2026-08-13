@@ -69,6 +69,7 @@ function deriveObsidianBase(
     version?: number;
     downloadedAt?: string;
     images?: Record<string, string>;
+    embedSizes?: Record<string, string>;
     diagrams?: Record<string, string>;
   },
 ): string {
@@ -80,7 +81,9 @@ function deriveObsidianBase(
   });
   const index = buildPageIndex(plugin.app);
   let md = canonicalLinksToWiki(markdown, (id) => index.idToNote(id));
-  md = canonicalImagesToEmbeds(md, sidecar.images ?? {});
+  // Size hints too: the base is canonical (hintless), so without restoring them
+  // every `![[Diagram.png|100%]]` line would read as changed.
+  md = canonicalImagesToEmbeds(md, sidecar.images ?? {}, sidecar.embedSizes);
   // The base is derived from canonical markdown, which names rendered PNGs.
   // Without restoring the drawing links every diagram line would read as
   // changed against the note on disk, and the gutter would cry wolf.

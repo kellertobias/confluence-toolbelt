@@ -121,7 +121,7 @@ async function uploadReferencedImages(
   const ctx = plugin.buildContext();
   const client = plugin.client();
   const names = new Set<string>();
-  for (const m of markdown.matchAll(/!\[\[([^\]]+)\]\]/g)) {
+  for (const m of markdown.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
     names.add((m[1] ?? "").trim());
   }
   if (!names.size) return;
@@ -248,10 +248,17 @@ async function writeDownloadedPage(
   // Read the prior sidecar first: the diagram map lives there, and the embeds
   // have to be restored before anything downstream reads the body.
   const prior = await readSidecar(ctx.fs, ctx.path, notePath);
+  // Display hints live only in the vault — Confluence never sees them — so they
+  // come from the prior sidecar rather than from what was just downloaded.
+  if (prior?.embedSizes) result.sidecar.embedSizes = prior.embedSizes;
   let markdown = canonicalLinksToWiki(result.markdown, (id) =>
     index.idToNote(id),
   );
-  markdown = canonicalImagesToEmbeds(markdown, result.sidecar.images);
+  markdown = canonicalImagesToEmbeds(
+    markdown,
+    result.sidecar.images,
+    result.sidecar.embedSizes,
+  );
   // Point rendered-diagram embeds back at the drawings they came from. Doing it
   // here — before the note is written and before attachments are fetched —
   // means the rendered PNG is never written into the vault as a stray file, and
@@ -844,7 +851,14 @@ export async function uploadCommand(
     let canonicalish = wikiLinksToCanonical(drawn.markdown, (n) =>
       index.noteToId(n),
     );
-    canonicalish = embedsToCanonicalImages(canonicalish, sidecar.images);
+    // Rebuilt from scratch each upload so the map mirrors the note exactly and
+    // a hint cannot outlive the embed it belonged to.
+    sidecar.embedSizes = {};
+    canonicalish = embedsToCanonicalImages(
+      canonicalish,
+      sidecar.images,
+      sidecar.embedSizes,
+    );
 
     const result = await uploadObsidianPage(
       plugin.client(),
@@ -869,6 +883,7 @@ export async function uploadCommand(
       conflictMd = canonicalImagesToEmbeds(
         conflictMd,
         conv.sidecar.images ?? {},
+        sidecar.embedSizes,
       );
       // The merged document came back from Confluence naming the rendered PNGs;
       // restore the drawing links so resolving a conflict doesn't cost the user

@@ -41,29 +41,59 @@ export function wikiLinksToCanonical(
   );
 }
 
-/** ![caption](#file) → ![[file]] (caption stashed in `images` for round-trip). */
+/**
+ * Split an Obsidian embed target into filename and display hint.
+ *
+ * `![[Diagram.png|100%]]` names the attachment `Diagram.png` and asks Obsidian
+ * to display it at 100% width. The hint is presentation, not identity: carrying
+ * it into the attachment reference yields `<ri:attachment ri:filename=
+ * "Diagram.png|100%">`, which matches nothing on the page, and Confluence
+ * renders the embed as "Preview unavailable".
+ */
+function splitEmbedTarget(target: string): { name: string; size?: string } {
+  const bar = target.indexOf("|");
+  if (bar === -1) return { name: target.trim() };
+  return {
+    name: target.slice(0, bar).trim(),
+    size: target.slice(bar + 1).trim() || undefined,
+  };
+}
+
+/** ![caption](#file) → ![[file]] (caption and size hint restored from the
+ * sidecar, so both round-trip). */
 export function canonicalImagesToEmbeds(
   body: string,
   images?: Record<string, string>,
+  embedSizes?: Record<string, string>,
 ): string {
   return body.replace(
     /!\[([^\]]*)\]\(#([^)]+)\)/g,
     (_full, caption: string, file: string) => {
       const name = file.trim();
       if (images && caption) images[name] = caption;
-      return `![[${name}]]`;
+      const size = embedSizes?.[name];
+      return `![[${name}${size ? `|${size}` : ""}]]`;
     },
   );
 }
 
-/** ![[file]] → ![caption](#file) (caption restored from `images` when known). */
+/** ![[file]] → ![caption](#file) (caption restored from `images` when known).
+ *
+ * Any display hint is stripped from the filename and recorded in `embedSizes`
+ * so download can put it back — Confluence has no equivalent, and it is not
+ * part of the attachment's name. */
 export function embedsToCanonicalImages(
   body: string,
   images?: Record<string, string>,
+  embedSizes?: Record<string, string>,
 ): string {
   return body.replace(/!\[\[([^\]]+)\]\]/g, (_full, file: string) => {
-    const name = file.trim();
+    const { name, size } = splitEmbedTarget(file);
     const caption = images?.[name] ?? "";
+    if (embedSizes) {
+      if (size) embedSizes[name] = size;
+      else delete embedSizes[name];
+    }
     return `![${caption}](#${name})`;
   });
 }
