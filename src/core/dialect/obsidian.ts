@@ -5,6 +5,7 @@
  * Canonical ⇄ Obsidian mappings:
  *  - HTML-comment header (<!-- pageId: … -->)  ⇄  YAML properties (frontmatter)
  *  - info panels (> <!-- panel:c:i -->)        ⇄  callouts (> [!type])
+ *  - expand sections (<!-- expand:T -->…)      ⇄  foldable callouts (> [!expand]-)
  *  - inline comments (<!-- comment:UUID -->…)  ⇄  %% thread %%anchor%% /ids %%
  *  - block node tags (<!-- node:ID -->)        →  removed (kept in sidecar base)
  *
@@ -134,7 +135,11 @@ function propsToHeader(props: Record<string, FrontmatterValue>): {
 // ---------------------------------------------------------------------------
 
 const PANEL_PREAMBLE_RE = /^>\s*<!--\s*panel:([^:>]+):([^>]+?)\s*-->\s*(.*)$/i;
-const CALLOUT_PREAMBLE_RE = /^>\s*\[!([^\]]+)\]\s*(?:%%cf:([^%]+)%%)?\s*(.*)$/;
+// The optional `[-+]` is Obsidian's fold marker. It carries no Confluence
+// meaning, but it has to be consumed here: folding a panel in Obsidian would
+// otherwise push a literal "-" into the panel's title on the next upload.
+const CALLOUT_PREAMBLE_RE =
+  /^>\s*\[!([^\]]+)\][-+]?\s*(?:%%cf:([^%]+)%%)?\s*(.*)$/;
 
 /**
  * Text wrapped in emphasis markers and nothing else.
@@ -212,6 +217,13 @@ function calloutsToPanels(body: string): string {
       continue;
     }
     const calloutType = (m[1] ?? "").trim().toLowerCase();
+    // Expands are their own construct, not a panel colour. They are already
+    // gone by the time this runs; the guard keeps a hand-written one from
+    // silently becoming an info panel.
+    if (calloutType === EXPAND_CALLOUT_TYPE) {
+      out.push(lines[i] ?? "");
+      continue;
+    }
     const preserved = m[2]; // "color:icon" if present
     const title = (m[3] ?? "").trim();
     let color: string;
@@ -235,6 +247,120 @@ function calloutsToPanels(body: string): string {
         out.push(">");
       }
     }
+  }
+  return out.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Expand sections ⇄ foldable callouts
+// ---------------------------------------------------------------------------
+
+/**
+ * Confluence's expand macro reaches canonical markdown as a pair of delimiters
+ * (`<!-- expand:Title -->` … `<!-- /expand -->`) wrapping arbitrary blocks.
+ * Obsidian renders an HTML comment as nothing at all, so a page full of expands
+ * arrives as a wall of prose whose collapsible structure has vanished, and the
+ * user cannot fold what they cannot see.
+ *
+ * Obsidian's one native collapsible is the foldable callout, so that is what an
+ * expand becomes: `> [!expand]- Title`, where `-` means "starts collapsed" —
+ * which is how Confluence renders it too. The body is quoted one level rather
+ * than flattened, so tables, code fences, panels and nested expands inside an
+ * expand keep working as themselves.
+ *
+ * `expand` is not one of Obsidian's built-in callout types. Obsidian falls back
+ * to the default note styling for unknown types and still folds them, and the
+ * plugin's stylesheet gives it a Confluence-like look. A dedicated type is worth
+ * that: it round-trips unambiguously, where reusing `[!note]` would make an
+ * expand indistinguishable from a panel.
+ */
+const EXPAND_CALLOUT_TYPE = "expand";
+
+const EXPAND_OPEN_RE = /^\s*<!--\s*expand(?::\s*([\s\S]*?))?\s*-->\s*$/i;
+const EXPAND_CLOSE_RE = /^\s*<!--\s*\/expand\s*-->\s*$/i;
+/** `> [!expand]- Title` — the fold marker is optional and either sign is
+ * accepted, so a user who expands the section by hand is not fighting the
+ * next download. */
+const EXPAND_CALLOUT_RE = new RegExp(
+  `^>\\s*\\[!${EXPAND_CALLOUT_TYPE}\\][-+]?\\s*(.*)$`,
+  "i",
+);
+
+/**
+ * Index of the `<!-- /expand -->` closing the delimiter at `start`, or -1 when
+ * the document never closes it.
+ *
+ * Depth-counted, so a nested expand's close does not end the outer one. An
+ * unterminated opener is left alone rather than swallowing the rest of the
+ * document — the same call the upload path makes.
+ */
+function matchingExpandEnd(lines: string[], start: number): number {
+  let depth = 1;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (EXPAND_CLOSE_RE.test(line)) {
+      depth--;
+      if (depth === 0) return i;
+    } else if (EXPAND_OPEN_RE.test(line)) {
+      depth++;
+    }
+  }
+  return -1;
+}
+
+/** Quote one line into a callout body. A blank line has to become a bare `>`
+ * or the callout ends there and the rest of the body spills out below it. */
+function quoteIntoCallout(line: string): string {
+  return line.trim() === "" ? ">" : `> ${line}`;
+}
+
+function expandsToCallouts(body: string): string {
+  const lines = body.split(/\r?\n/);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = (lines[i] ?? "").match(EXPAND_OPEN_RE);
+    const end = m ? matchingExpandEnd(lines, i) : -1;
+    if (!m || end === -1) {
+      out.push(lines[i] ?? "");
+      continue;
+    }
+    const title = (m[1] ?? "").trim();
+    // Recurse first, then quote: an inner expand is already a callout by the
+    // time it is quoted, which is exactly how Obsidian nests them.
+    const inner = expandsToCallouts(lines.slice(i + 1, end).join("\n"));
+    out.push(
+      `> [!${EXPAND_CALLOUT_TYPE}]-${title ? ` ${title}` : ""}`,
+      ...inner.split("\n").map(quoteIntoCallout),
+    );
+    i = end;
+  }
+  return out.join("\n");
+}
+
+function calloutsToExpands(body: string): string {
+  const lines = body.split(/\r?\n/);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = (lines[i] ?? "").match(EXPAND_CALLOUT_RE);
+    if (!m) {
+      out.push(lines[i] ?? "");
+      continue;
+    }
+    // Everything quoted below the preamble is the section's body; the first
+    // unquoted line ends it.
+    const inner: string[] = [];
+    let j = i + 1;
+    while (j < lines.length && /^\s*>/.test(lines[j] ?? "")) {
+      inner.push((lines[j] ?? "").replace(/^\s*>[ \t]?/, ""));
+      j++;
+    }
+    const title = (m[1] ?? "").trim();
+    out.push(
+      title ? `<!-- expand:${title} -->` : "<!-- expand -->",
+      ...calloutsToExpands(inner.join("\n")).split("\n"),
+      "<!-- /expand -->",
+    );
+    i = j - 1;
   }
   return out.join("\n");
 }
@@ -572,6 +698,10 @@ export function canonicalToObsidian(
   let obsidianBody = body;
   obsidianBody = commentsToObsidian(obsidianBody, comments, opts.genId);
   obsidianBody = panelsToCallouts(obsidianBody);
+  // After the panels: quoting an expand's body turns a panel inside it into a
+  // nested callout, which is what Obsidian expects — but only if it is already
+  // a callout, since `panelsToCallouts` only recognises an unquoted preamble.
+  obsidianBody = expandsToCallouts(obsidianBody);
   obsidianBody = statusesToObsidian(obsidianBody);
   obsidianBody = widgetsToObsidian(obsidianBody);
   obsidianBody = stripNodeTags(obsidianBody);
@@ -604,6 +734,9 @@ export function obsidianToCanonical(
   const { meta } = propsToHeader(props);
 
   let canonicalBody = body;
+  // Mirror image of the download order: unwrap the expands first so a panel
+  // nested inside one is back at quote depth 1 when `calloutsToPanels` runs.
+  canonicalBody = calloutsToExpands(canonicalBody);
   canonicalBody = calloutsToPanels(canonicalBody);
   canonicalBody = statusesToCanonical(canonicalBody);
   canonicalBody = widgetsToCanonical(canonicalBody);

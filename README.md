@@ -753,6 +753,22 @@ a collapsed section, and it round-trips back to the same delimiters on download.
 One limitation: an expand nested inside a table cell or a panel body cannot be
 represented in markdown. Upload warns about those, and they are flattened.
 
+**In the Obsidian plugin**, the delimiters are a foldable callout instead —
+Obsidian renders an HTML comment as nothing at all, so a page of expands would
+otherwise arrive as a wall of prose with its structure invisible:
+
+```markdown
+> [!expand]- How we measured this
+> Arbitrary markdown goes here: paragraphs, lists, tables, code blocks.
+```
+
+The `-` means "starts collapsed", the way Confluence renders it; change it to
+`+` to have the section start open, and it still uploads as an expand. The body
+is quoted one level rather than flattened, so tables, code fences, panels and
+nested expands inside a section keep working as themselves. The CLI keeps the
+comment delimiters — the canonical form is unchanged, so the two round-trip
+against the same pages.
+
 ### Status Tags
 
 Inline status labels (colored badges):

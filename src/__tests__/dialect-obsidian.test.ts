@@ -442,6 +442,135 @@ describe("panel titles", () => {
   });
 });
 
+describe("expand sections", () => {
+  it("becomes a collapsed callout carrying the title", () => {
+    const { obsidian } = panelRoundTrip(
+      ["<!-- expand:How we measured this -->", "", "Hidden prose.", "", "<!-- /expand -->"].join(
+        "\n",
+      ),
+    );
+    // `-` is Obsidian's "starts collapsed" marker, which is how Confluence
+    // renders an expand too.
+    expect(obsidian).toContain("> [!expand]- How we measured this");
+    expect(obsidian).toContain("> Hidden prose.");
+    expect(obsidian).not.toContain("<!-- expand");
+  });
+
+  it("round-trips back to the canonical delimiters unchanged", () => {
+    const body = [
+      "<!-- expand:Details -->",
+      "",
+      "Hidden prose.",
+      "",
+      "<!-- /expand -->",
+    ].join("\n");
+    expect(panelRoundTrip(body).canonical).toContain(body);
+  });
+
+  it("supports a title-less expand", () => {
+    const { obsidian, canonical } = panelRoundTrip(
+      ["<!-- expand -->", "", "Body.", "", "<!-- /expand -->"].join("\n"),
+    );
+    expect(obsidian).toContain("> [!expand]-\n");
+    expect(canonical).toContain("<!-- expand -->");
+    expect(canonical).not.toContain("<!-- expand: -->");
+  });
+
+  it("keeps a table inside the section intact", () => {
+    const { obsidian, canonical } = panelRoundTrip(
+      [
+        "<!-- expand:Numbers -->",
+        "",
+        "| a | b |",
+        "| --- | --- |",
+        "| 1 | 2 |",
+        "",
+        "<!-- /expand -->",
+      ].join("\n"),
+    );
+    // Quoted one level, so Obsidian still renders it as a table — not
+    // flattened into the preamble.
+    expect(obsidian).toContain("> | a | b |");
+    expect(canonical).toContain("| a | b |");
+    expect(canonical).not.toContain("> | a | b |");
+  });
+
+  it("nests an expand inside an expand", () => {
+    const { obsidian, canonical } = panelRoundTrip(
+      [
+        "<!-- expand:Outer -->",
+        "",
+        "<!-- expand:Inner -->",
+        "",
+        "Deep.",
+        "",
+        "<!-- /expand -->",
+        "",
+        "<!-- /expand -->",
+      ].join("\n"),
+    );
+    expect(obsidian).toContain("> [!expand]- Outer");
+    expect(obsidian).toContain("> > [!expand]- Inner");
+    expect(obsidian).toContain("> > Deep.");
+    expect(canonical).toContain("<!-- expand:Inner -->");
+    // The inner close must not have ended the outer section.
+    expect(canonical.match(/<!-- \/expand -->/g)).toHaveLength(2);
+  });
+
+  it("turns a panel inside an expand into a nested callout", () => {
+    const { obsidian, canonical } = panelRoundTrip(
+      [
+        "<!-- expand:Notes -->",
+        "",
+        "> <!-- panel:info:info -->",
+        "> Careful.",
+        "",
+        "<!-- /expand -->",
+      ].join("\n"),
+    );
+    expect(obsidian).toContain("> > [!info]");
+    expect(obsidian).toContain("> > Careful.");
+    expect(canonical).toContain("> <!-- panel:info:info -->");
+  });
+
+  it("leaves an unterminated delimiter alone", () => {
+    // Matching the upload path, which falls through to ordinary paragraph
+    // handling rather than swallowing the rest of the document.
+    const { obsidian } = panelRoundTrip(
+      ["<!-- expand:Oops -->", "", "Loose prose."].join("\n"),
+    );
+    expect(obsidian).toContain("<!-- expand:Oops -->");
+    expect(obsidian).not.toContain("[!expand]");
+  });
+
+  it("accepts a section the user expanded by hand", () => {
+    const canonical = obsidianToCanonical(
+      ["---", 'pageId: "1"', "---", "", "> [!expand]+ Details", "> Body."].join("\n"),
+      { comments: {} },
+    );
+    expect(canonical).toContain("<!-- expand:Details -->");
+    expect(canonical).toContain("Body.");
+  });
+
+  it("does not mistake an expand callout for a panel", () => {
+    const canonical = obsidianToCanonical(
+      ["---", 'pageId: "1"', "---", "", "> [!expand]- Details", "> Body."].join("\n"),
+      { comments: {} },
+    );
+    expect(canonical).not.toContain("panel:");
+  });
+
+  it("keeps a folded panel's title free of the fold marker", () => {
+    // `> [!info]- Examples` used to upload as a panel titled "- Examples".
+    const canonical = obsidianToCanonical(
+      ["---", 'pageId: "1"', "---", "", "> [!info]- Examples", "> Body."].join("\n"),
+      { comments: {} },
+    );
+    expect(canonical).toContain("> **Examples**");
+    expect(canonical).not.toContain("**- Examples**");
+  });
+});
+
 // --- helpers ---------------------------------------------------------------
 
 function withHeader(body: string): string {

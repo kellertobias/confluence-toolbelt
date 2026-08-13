@@ -768,3 +768,50 @@ badge[color="purple"],
 .callout.cf-panel-untitled > .callout-content > :last-child {
   margin-bottom: 0;
 }
+
+
+/* ---------------------------------------------------------------------------
+   Expand sections
+   ---------------------------------------------------------------------------
+   Confluence's expand macro downloads as `> [!expand]- Title`. `expand` is not
+   one of Obsidian's built-in types, so it would otherwise inherit the default
+   note look — a colored box, which is the opposite of what an expand is:
+   Confluence draws no box at all, just a chevron and the title. */
+.callout[data-callout="expand"] {
+  --callout-color: var(--mono-rgb-100, 0, 0, 0);
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  mix-blend-mode: normal;
+  padding: 4px 0;
+}
+.callout[data-callout="expand"] > .callout-title {
+  color: var(--text-normal);
+  font-weight: 400;
+  gap: 4px;
+  padding: 0;
+}
+/* Confluence puts the chevron before the title and has no second icon. */
+.callout[data-callout="expand"] > .callout-title > .callout-icon {
+  display: none;
+}
+.callout[data-callout="expand"] > .callout-title > .callout-fold {
+  color: var(--text-muted);
+  order: -1;
+}
+/* A title-less expand is caught by `markUntitledPanels` (its title text is the
+   type name), which hides the invented heading — but that rule also hides the
+   fold arrow, and an expand with no way to unfold it is a dead end. */
+.callout[data-callout="expand"].cf-panel-untitled > .callout-title > .callout-fold {
+  display: flex;
+}
+/* Confluence indents the revealed body under the chevron. */
+.callout[data-callout="expand"] > .callout-content {
+  padding: 4px 0 0 20px;
+}
+.callout[data-callout="expand"] > .callout-content > :first-child {
+  margin-top: 0;
+}
+.callout[data-callout="expand"] > .callout-content > :last-child {
+  margin-bottom: 0;
+}
