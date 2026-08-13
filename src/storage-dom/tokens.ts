@@ -144,6 +144,46 @@ function decodePayload(v: unknown): string {
   return decodeURIComponent(String(v || "").replace(/\\/g, ""));
 }
 
+/** Tokens that decode into a fenced block, and therefore have to start on a
+ * line of their own. */
+const FENCE_TOKEN_RE = /^MD(?:\\)?_(?:CODE|MERMAID)\(/;
+
+/**
+ * Surround a decoded fenced block with the blank lines that make it a block.
+ *
+ * Confluence stores two code macros back to back inside one text node, so the
+ * tokens arrive adjacent with nothing between them. Emitting each as
+ * ` ```lang\nbody\n``` ` then glues the first block's closing fence onto the
+ * second's opening one (` ``````json `), and that line is no longer a fence:
+ * on the next upload the first code block stays open and swallows the second
+ * one whole — its language gone, its body absorbed as text, and no warning.
+ * The panel token already guards against exactly this; fenced blocks did not.
+ *
+ * Separators are derived from the *undecoded* string, so the pair is added
+ * once rather than by both neighbours: a block followed by another fence token
+ * adds nothing, leaving the next one to supply its own leading break.
+ */
+function asOwnBlock(
+  rendered: string,
+  match: string,
+  offset: number,
+  whole: string,
+): string {
+  const before = whole.slice(0, offset);
+  const after = whole.slice(offset + match.length);
+  const lead = before === "" || before.endsWith("\n\n")
+    ? ""
+    : before.endsWith("\n")
+      ? "\n"
+      : "\n\n";
+  const trail = after === "" || after.startsWith("\n\n") || FENCE_TOKEN_RE.test(after)
+    ? ""
+    : after.startsWith("\n")
+      ? "\n"
+      : "\n\n";
+  return `${lead}${rendered}${trail}`;
+}
+
 /**
  * Decode all durable MD_* tokens back into markdown / Confluence storage.
  *
@@ -280,11 +320,11 @@ export function decodeMdCommentTokens(s: string): string {
     // Emit code blocks using fenced style ```lang\n...\n```
     .replace(
       /MD(?:\\)?_CODE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
-      (_m, langEnc, bodyEnc) => {
+      (m, langEnc, bodyEnc, offset: number, whole: string) => {
         const lang = decodePayload(langEnc);
         const body = decodePayload(bodyEnc);
         const fence = `\`\`\`${lang ? String(lang) : ""}`;
-        return `${fence}\n${body}\n\`\`\``;
+        return asOwnBlock(`${fence}\n${body}\n\`\`\``, m, offset, whole);
       },
     );
 
@@ -299,9 +339,9 @@ export function decodeMdCommentTokens(s: string): string {
   // to avoid mangling decoded content like -->> in sequence diagrams).
   out = out.replace(
     /MD(?:\\)?_MERMAID\(([A-Za-z0-9+/=]+)\)/g,
-    (_m, encoded) => {
+    (m, encoded, offset: number, whole: string) => {
       const code = base64ToUtf8(String(encoded));
-      return `\`\`\`mermaid\n${code}\n\`\`\``;
+      return asOwnBlock(`\`\`\`mermaid\n${code}\n\`\`\``, m, offset, whole);
     },
   );
 

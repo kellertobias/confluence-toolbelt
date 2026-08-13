@@ -2598,3 +2598,78 @@ describe('TOC widget', () => {
     expect(back).toContain('ac:name="toc"');
   });
 });
+
+describe('fenced blocks as their own block', () => {
+  const code = (lang: string, body: string) =>
+    `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">${lang}</ac:parameter>` +
+    `<ac:plain-text-body><![CDATA[${body}]]></ac:plain-text-body></ac:structured-macro>`;
+  const md = (html: string) =>
+    storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n\n');
+
+  it('separates two adjacent code macros', () => {
+    // Glued (` ``````json `) the closing fence is no longer a fence: the first
+    // block stays open on upload and swallows the second one whole.
+    const out = md(code('sql', 'SELECT 1') + code('json', '{"a":1}'));
+    expect(out).not.toContain('``````');
+    expect(out).toContain('```sql\nSELECT 1\n```\n\n```json');
+  });
+
+  it('keeps both code macros on the way back up', () => {
+    const html = code('sql', 'SELECT 1') + code('json', '{"a":1}');
+    const back = markdownToStorageHtml(md(html));
+    expect(back.match(/ac:name="code"/g)).toHaveLength(2);
+    expect(back).toContain('ac:name="language">json</ac:parameter>');
+  });
+
+  it('separates adjacent code macros inside an expand', () => {
+    const html =
+      '<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">T</ac:parameter>' +
+      `<ac:rich-text-body>${code('sql', 'SELECT 1')}${code('json', '{"a":1}')}</ac:rich-text-body>` +
+      '</ac:structured-macro>';
+    const back = markdownToStorageHtml(md(html));
+    expect(back.match(/ac:name="code"/g)).toHaveLength(2);
+    expect(back.match(/ac:name="expand"/g)).toHaveLength(1);
+  });
+
+  it('separates adjacent code macros inside a panel', () => {
+    const html =
+      '<ac:structured-macro ac:name="info"><ac:rich-text-body>' +
+      `${code('sql', 'SELECT 1')}${code('json', '{"a":1}')}` +
+      '</ac:rich-text-body></ac:structured-macro>';
+    const out = md(html);
+    expect(out).not.toContain('``````');
+    // Still quoted — the blank line between them has to stay in the panel.
+    expect(out).toContain('> ```sql');
+    expect(out).toContain('> ```json');
+  });
+
+  it('separates a code macro from an adjacent mermaid diagram', () => {
+    const mermaid =
+      '<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">mermaid</ac:parameter>' +
+      '<ac:plain-text-body><![CDATA[graph TD\n  A --> B]]></ac:plain-text-body></ac:structured-macro>';
+    const out = md(code('sql', 'SELECT 1') + mermaid);
+    expect(out).not.toContain('``````');
+  });
+
+  it('does not pile up blank lines around a lone code macro', () => {
+    const out = md('<p>before</p>' + code('sql', 'SELECT 1') + '<p>after</p>');
+    expect(out).not.toMatch(/\n{3,}/);
+    expect(out).toContain('before\n\n```sql');
+    expect(out).toContain('```\n\nafter');
+  });
+
+  it('keeps blank lines inside a code body intact', () => {
+    const out = md(code('sql', 'SELECT 1\n\n\nSELECT 2'));
+    expect(out).toContain('SELECT 1\n\n\nSELECT 2');
+  });
+
+  it('still separates a code macro from a following panel', () => {
+    const html =
+      code('sql', 'SELECT 1') +
+      '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>A note.</p></ac:rich-text-body></ac:structured-macro>';
+    const out = md(html);
+    expect(out).toContain('```\n\n> <!-- panel:info:info -->');
+  });
+});
