@@ -1,3 +1,8 @@
+## 2.11.0 (2026-08-13)
+
+* fix(obsidian): keep embed size hints out of attachment names ([9d42df9](https://github.com/kellertobias/confluence-toolbelt/commit/9d42df9))
+* feat(obsidian): upload Excalidraw diagrams as rendered attachments ([6d71763](https://github.com/kellertobias/confluence-toolbelt/commit/6d71763))
+
 ## <small>2.10.1 (2026-08-11)</small>
 
 * fix(obsidian): render Confluence constructs and stop spurious merge conflicts ([d10ef07](https://github.com/kellertobias/confluence-toolbelt/commit/d10ef07))
