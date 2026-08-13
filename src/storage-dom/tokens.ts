@@ -130,6 +130,21 @@ function selectAccountId(id: string, label: string): string {
 }
 
 /**
+ * Decode a token payload.
+ *
+ * Payloads are always `encodeURIComponent`-ed, so a backslash can never occur
+ * in one legitimately — every backslash we see was added by Turndown escaping
+ * the token as it passed through a markdown conversion. Stripping them here
+ * matters most for container tokens (`MD_PANEL`), whose payload is re-run
+ * through Turndown: without it the nested tokens pick up a second escape layer
+ * (`MD\\_CODE`) that no decoder regex matches, and a code block inside an info
+ * panel silently vanishes.
+ */
+function decodePayload(v: unknown): string {
+  return decodeURIComponent(String(v || "").replace(/\\/g, ""));
+}
+
+/**
  * Decode all durable MD_* tokens back into markdown / Confluence storage.
  *
  * This is the inverse of `normalizeMacros` (for read paths) and the final
@@ -141,7 +156,7 @@ export function decodeMdCommentTokens(s: string): string {
   let out = s
     .replace(
       /MD(?:\\)?_COMMENT\(([^)]+)\)/g,
-      (_m, enc) => `<!-- ${decodeURIComponent(String(enc))} -->`,
+      (_m, enc) => `<!-- ${decodePayload(enc)} -->`,
     )
     .replace(
       /MD(?:\\)?_WIDGET\(([^)]+)\)/g,
@@ -151,12 +166,12 @@ export function decodeMdCommentTokens(s: string): string {
     // Handle both literal and Turndown-escaped forms (MD\_CMT\_START, etc.)
     .replace(
       /MD(?:\\)?_CMT(?:\\)?_START\(([^)]+)\)/g,
-      (_m, enc) => `<!-- comment:${decodeURIComponent(String(enc || ""))} -->`,
+      (_m, enc) => `<!-- comment:${decodePayload(enc)} -->`,
     )
     .replace(
       /MD(?:\\)?_CMT(?:\\)?_END\(([^)]+)\)/g,
       (_m, enc) =>
-        `<!-- commend-end:${decodeURIComponent(String(enc || ""))} -->`,
+        `<!-- commend-end:${decodePayload(enc)} -->`,
     )
     /**
      * Convert page link tokens to markdown links.
@@ -165,8 +180,8 @@ export function decodeMdCommentTokens(s: string): string {
     .replace(
       /MD(?:\\)?_PAGE(?:\\)?_LINK~~([^~]+)~~([^~]+)~~END/g,
       (_m, refEnc, textEnc) => {
-        const pageRef = decodeURIComponent(String(refEnc || ""));
-        const linkText = decodeURIComponent(String(textEnc || ""));
+        const pageRef = decodePayload(refEnc);
+        const linkText = decodePayload(textEnc);
         return `[${linkText}](${pageRef})`;
       },
     )
@@ -176,8 +191,8 @@ export function decodeMdCommentTokens(s: string): string {
     .replace(
       /MD(?:\\)?_ATTACH(?:\\)?_LINK~~([^~]+)~~([^~]+)~~END/g,
       (_m, filenameEnc, textEnc) => {
-        const filename = decodeURIComponent(String(filenameEnc || ""));
-        const linkText = decodeURIComponent(String(textEnc || ""));
+        const filename = decodePayload(filenameEnc);
+        const linkText = decodePayload(textEnc);
         return `[${linkText}](#attachment:${filename})`;
       },
     )
@@ -187,17 +202,17 @@ export function decodeMdCommentTokens(s: string): string {
     .replace(
       /MD(?:\\)?_URL(?:\\)?_LINK~~([^~]+)~~([^~]+)~~END/g,
       (_m, urlEnc, textEnc) => {
-        const url = decodeURIComponent(String(urlEnc || ""));
-        const linkText = decodeURIComponent(String(textEnc || ""));
+        const url = decodePayload(urlEnc);
+        const linkText = decodePayload(textEnc);
         return `[${linkText}](${url})`;
       },
     )
     .replace(
       /MD(?:\\)?_PANEL\(([^,)]*),([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
       (_m, colorEnc, iconEnc, bodyEnc) => {
-        const color = decodeURIComponent(String(colorEnc || "")) || "info";
-        const icon = decodeURIComponent(String(iconEnc || "")) || color;
-        const innerHtml = decodeURIComponent(String(bodyEnc || ""));
+        const color = decodePayload(colorEnc) || "info";
+        const icon = decodePayload(iconEnc) || color;
+        const innerHtml = decodePayload(bodyEnc);
         const innerMd = unescapeMarkdownUnderscores(
           decodeMdCommentTokens(turndown.turndown(innerHtml || "")),
         );
@@ -206,14 +221,24 @@ export function decodeMdCommentTokens(s: string): string {
         for (const l of lines) {
           outLines.push(l.trim().length ? `> ${l}` : ">");
         }
-        return outLines.join("\n");
+        // A panel is a block. Confluence happily stores two of them back to
+        // back (and puts them in one text node), so without explicit blank
+        // lines the second one's preamble glues onto the first one's last line
+        // and neither is recognized as a blockquote any more.
+        return `\n\n${outLines.join("\n")}\n\n`;
       },
-    )
-    .replace(
+    );
+
+  // Collapse the blank-line runs the panel separator can pile up. Done here,
+  // before code/mermaid tokens are decoded, so it can never touch blank lines
+  // that belong inside a fenced block.
+  out = out.replace(/\n{3,}/g, "\n\n");
+
+  out = out.replace(
       /MD(?:\\)?_STATUS\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
       (_m, colorEnc, titleEnc) => {
-        const color = decodeURIComponent(String(colorEnc || "")) || "grey";
-        const title = decodeURIComponent(String(titleEnc || "")) || "Status";
+        const color = decodePayload(colorEnc) || "grey";
+        const title = decodePayload(titleEnc) || "Status";
         return `<!-- status:${color}:${title} -->`;
       },
     )
@@ -221,15 +246,15 @@ export function decodeMdCommentTokens(s: string): string {
     .replace(
       /MD(?:\\)?_JIRA(?:\\)?_LINK~~([^~]+)~~END/g,
       (_m, keyEnc) => {
-        const key = decodeURIComponent(String(keyEnc || ""));
+        const key = decodePayload(keyEnc);
         return `[${key}](jira:${key})`;
       },
     )
     .replace(
       /MD(?:\\)?_IMAGE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
       (_m, refEnc, capEnc) => {
-        const ref = decodeURIComponent(String(refEnc || ""));
-        const cap = decodeURIComponent(String(capEnc || ""));
+        const ref = decodePayload(refEnc);
+        const cap = decodePayload(capEnc);
         const src = ref.startsWith("attach:") ? `#${ref.slice(7)}` : ref;
         return `![${cap || ""}](${src})`;
       },
@@ -237,8 +262,8 @@ export function decodeMdCommentTokens(s: string): string {
     .replace(
       /MD(?:\\)?_MENTION\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
       (_m, idEnc, visEnc) => {
-        const id = decodeURIComponent(String(idEnc || ""));
-        const vis = decodeURIComponent(String(visEnc || ""));
+        const id = decodePayload(idEnc);
+        const vis = decodePayload(visEnc);
         const label = vis || id;
         return `<!-- mention:${id} ${label} -->`;
       },
@@ -256,8 +281,8 @@ export function decodeMdCommentTokens(s: string): string {
     .replace(
       /MD(?:\\)?_CODE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
       (_m, langEnc, bodyEnc) => {
-        const lang = decodeURIComponent(String(langEnc || ""));
-        const body = decodeURIComponent(String(bodyEnc || ""));
+        const lang = decodePayload(langEnc);
+        const body = decodePayload(bodyEnc);
         const fence = `\`\`\`${lang ? String(lang) : ""}`;
         return `${fence}\n${body}\n\`\`\``;
       },

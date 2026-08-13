@@ -10,6 +10,7 @@ import { Plugin, type WorkspaceLeaf } from "obsidian";
 
 import { fflateDeflater } from "../adapters/obsidian/deflate.js";
 import { browserDom } from "../adapters/obsidian/dom.js";
+import { createExcalidrawRenderer } from "../adapters/obsidian/excalidraw.js";
 import { noopGit } from "../adapters/obsidian/git.js";
 import { subtleHasher } from "../adapters/obsidian/hasher.js";
 import { obsidianHttp } from "../adapters/obsidian/http.js";
@@ -17,9 +18,11 @@ import { posixPath } from "../adapters/obsidian/posix-path.js";
 import { obsidianPrompter } from "../adapters/obsidian/prompter.js";
 import { vaultFs } from "../adapters/obsidian/vault-fs.js";
 import { ConfluenceClient } from "../api.js";
+import { statusLozengeAt } from "../core/dialect/obsidian.js";
 import type { ConfluenceConfig, CoreContext } from "../core/ports.js";
 import { setDeflater } from "../storage-dom/deflate.js";
 import { setDom } from "../storage-dom/dom.js";
+import { badgeEditorExtension } from "./badge-editor.js";
 import { changeGutterExtension } from "./change-gutter.js";
 import { commentEditorExtension } from "./comment-editor.js";
 import { renderConfluenceComments } from "./comment-render.js";
@@ -27,6 +30,7 @@ import {
   createCommand,
   downloadAllCommand,
   downloadCommand,
+  downloadTreePromptCommand,
   searchCommand,
   uploadCommand,
 } from "./commands.js";
@@ -35,6 +39,11 @@ import {
   DEFAULT_SETTINGS,
   type ConfluenceToolsSettings,
 } from "./settings.js";
+import {
+  insertOrEditStatus,
+  registerStatusLozengeEditing,
+} from "./status-modal.js";
+import { renderConfluenceWidgets } from "./toc-render.js";
 import { CONFLUENCE_VIEW_TYPE, ConfluenceToolsView } from "./view.js";
 
 export default class ConfluenceToolsPlugin extends Plugin {
@@ -84,8 +93,19 @@ export default class ConfluenceToolsPlugin extends Plugin {
     this.registerMarkdownPostProcessor((el, ctx) =>
       renderConfluenceComments(this, el, ctx),
     );
+    // …and let rendered status lozenges be clicked to edit them.
+    this.registerMarkdownPostProcessor((el, ctx) =>
+      registerStatusLozengeEditing(this, el, ctx),
+    );
+    // Fill widget placeholders (the TOC macro) with live content.
+    this.registerMarkdownPostProcessor((el, ctx) =>
+      renderConfluenceWidgets(this, el, ctx),
+    );
     // …and decorate them in Live Preview (hide metadata, highlight, gutter icon).
     this.registerEditorExtension(commentEditorExtension(this));
+    // Draw status badges in Live Preview. Obsidian's sanitizer drops the
+    // `<badge>` tag, so the plugin renders it from the source itself.
+    this.registerEditorExtension(badgeEditorExtension());
     // Show local-vs-last-sync changes as colored bars in the editor gutter.
     this.registerEditorExtension(changeGutterExtension(this));
 
@@ -115,6 +135,11 @@ export default class ConfluenceToolsPlugin extends Plugin {
       callback: () => createCommand(this),
     });
     this.addCommand({
+      id: "download-tree",
+      name: "Download Confluence page tree",
+      callback: () => downloadTreePromptCommand(this),
+    });
+    this.addCommand({
       id: "download-all",
       name: "Download all Confluence pages",
       callback: () => downloadAllCommand(this),
@@ -124,6 +149,26 @@ export default class ConfluenceToolsPlugin extends Plugin {
       name: "Search Confluence and download",
       callback: () => searchCommand(this),
     });
+    this.addCommand({
+      id: "insert-status",
+      name: "Insert or edit status",
+      editorCallback: (editor) => insertOrEditStatus(this, editor),
+    });
+
+    // Same action from the editor's right-click menu, labelled for whichever
+    // of the two cases the cursor is currently in.
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor) => {
+        const cursor = editor.getCursor();
+        const editing = !!statusLozengeAt(editor.getLine(cursor.line), cursor.ch);
+        menu.addItem((item) =>
+          item
+            .setTitle(editing ? "Edit status" : "Insert status")
+            .setIcon("tag")
+            .onClick(() => insertOrEditStatus(this, editor)),
+        );
+      }),
+    );
 
     this.addRibbonIcon("cloud", "Confluence Tools", () => this.activateView());
   }
@@ -150,6 +195,7 @@ export default class ConfluenceToolsPlugin extends Plugin {
       git: noopGit,
       prompter: obsidianPrompter(this.app),
       config: this.confluenceConfig(),
+      diagrams: createExcalidrawRenderer(this.app),
     };
   }
 

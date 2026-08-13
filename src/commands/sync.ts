@@ -24,6 +24,7 @@ import { hasUnresolvedConflicts } from '../sync/conflict.js';
 import { splitDetachedSection } from '../sync/detached.js';
 import { buildHeadingMap, mergeDocument, SyncBlock } from '../sync/merge.js';
 import { RawComment } from '../sync/blocks-from-storage.js';
+import { isSidecarMarkdown } from './page-files.js';
 import { uploadAll } from './upload.js';
 
 const { prompt } = enquirer;
@@ -274,7 +275,7 @@ function walkMarkdown(dir: string, includeHidden = false): string[] {
     const stat = fs.statSync(p);
     if (stat.isDirectory()) {
       out.push(...walkMarkdown(p, includeHidden));
-    } else if (/\.mdx?$/.test(entry)) {
+    } else if (/\.mdx?$/.test(entry) && !isSidecarMarkdown(entry)) {
       out.push(p);
     }
   }

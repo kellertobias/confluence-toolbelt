@@ -56,6 +56,40 @@ describe("image embed translation", () => {
     expect(back).toBe("![A diagram](#diagram.png)");
   });
 
+  it("keeps a display hint out of the attachment name", () => {
+    // `![[X.png|100%]]` naming attachment "X.png|100%" matches nothing on the
+    // page — Confluence renders it as "Preview unavailable".
+    const sizes: Record<string, string> = {};
+    expect(embedsToCanonicalImages("![[diagram.png|100%]]", {}, sizes)).toBe(
+      "![](#diagram.png)",
+    );
+    expect(sizes["diagram.png"]).toBe("100%");
+  });
+
+  it("restores the display hint on the way back", () => {
+    const sizes: Record<string, string> = {};
+    const embed = "![[diagram.png|400]]";
+    const canon = embedsToCanonicalImages(embed, {}, sizes);
+    expect(canonicalImagesToEmbeds(canon, {}, sizes)).toBe(embed);
+  });
+
+  it("drops a hint that is no longer in the note", () => {
+    const sizes: Record<string, string> = { "diagram.png": "100%" };
+    embedsToCanonicalImages("![[diagram.png]]", {}, sizes);
+    expect(sizes["diagram.png"]).toBeUndefined();
+  });
+
+  it("carries caption and hint together", () => {
+    const images: Record<string, string> = { "diagram.png": "A diagram" };
+    const sizes: Record<string, string> = {};
+    expect(embedsToCanonicalImages("![[diagram.png|50%]]", images, sizes)).toBe(
+      "![A diagram](#diagram.png)",
+    );
+    expect(
+      canonicalImagesToEmbeds("![A diagram](#diagram.png)", images, sizes),
+    ).toBe("![[diagram.png|50%]]");
+  });
+
   it("does not treat image embeds as page wikilinks", () => {
     expect(wikiLinksToCanonical("![[pic.png]]", () => "999")).toBe(
       "![[pic.png]]",

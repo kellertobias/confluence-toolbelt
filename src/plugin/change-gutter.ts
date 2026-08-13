@@ -27,6 +27,7 @@ import {
   canonicalImagesToEmbeds,
   canonicalLinksToWiki,
 } from "../core/dialect/links.js";
+import { restoreExcalidrawEmbeds } from "../core/dialect/diagrams.js";
 import { canonicalToObsidian } from "../core/dialect/obsidian.js";
 import { computeLineChanges } from "../core/diff/line-changes.js";
 import { readSidecar } from "../core/pipeline/sidecar-store.js";
@@ -68,6 +69,8 @@ function deriveObsidianBase(
     version?: number;
     downloadedAt?: string;
     images?: Record<string, string>;
+    embedSizes?: Record<string, string>;
+    diagrams?: Record<string, string>;
   },
 ): string {
   let counter = 0;
@@ -78,7 +81,13 @@ function deriveObsidianBase(
   });
   const index = buildPageIndex(plugin.app);
   let md = canonicalLinksToWiki(markdown, (id) => index.idToNote(id));
-  md = canonicalImagesToEmbeds(md, sidecar.images ?? {});
+  // Size hints too: the base is canonical (hintless), so without restoring them
+  // every `![[Diagram.png|100%]]` line would read as changed.
+  md = canonicalImagesToEmbeds(md, sidecar.images ?? {}, sidecar.embedSizes);
+  // The base is derived from canonical markdown, which names rendered PNGs.
+  // Without restoring the drawing links every diagram line would read as
+  // changed against the note on disk, and the gutter would cry wolf.
+  md = restoreExcalidrawEmbeds(md, sidecar.diagrams);
   return parseFrontmatter(md).body;
 }
 

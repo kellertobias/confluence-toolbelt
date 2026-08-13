@@ -19,10 +19,24 @@ import {
   embedsToCanonicalImages,
   wikiLinksToCanonical,
 } from "../core/dialect/links.js";
+import {
+  findExcalidrawEmbeds,
+  pruneDiagramMap,
+  renderedNameFor,
+  restoreExcalidrawEmbeds,
+  rewriteExcalidrawEmbeds,
+  sourceNameFor,
+} from "../core/dialect/diagrams.js";
 import { parseHeader } from "../md-header.js";
 import { hasUnresolvedConflicts } from "../sync/conflict.js";
 import { downloadReferencedAttachments } from "../core/pipeline/attachment-download.js";
 import { downloadPageToObsidian } from "../core/pipeline/obsidian-download.js";
+import {
+  countPages,
+  fetchPageTree,
+  foldersForPlan,
+  planTreeLayout,
+} from "../core/pipeline/page-tree.js";
 import { uploadObsidianPage } from "../core/pipeline/obsidian-upload.js";
 import {
   parsePageId,
@@ -32,6 +46,7 @@ import {
 import type ConfluenceToolsPlugin from "./main.js";
 import { syncAfterDownload } from "./obsidisync.js";
 import { Progress } from "./progress.js";
+import { hasLocalChangesAt } from "./sync-status.js";
 import { buildPageIndex, mimeForFilename } from "./vault-index.js";
 
 function sanitizeTitle(title: string): string {
@@ -106,7 +121,7 @@ async function uploadReferencedImages(
   const ctx = plugin.buildContext();
   const client = plugin.client();
   const names = new Set<string>();
-  for (const m of markdown.matchAll(/!\[\[([^\]]+)\]\]/g)) {
+  for (const m of markdown.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
     names.add((m[1] ?? "").trim());
   }
   if (!names.size) return;
@@ -126,6 +141,99 @@ async function uploadReferencedImages(
   }
 }
 
+/**
+ * Render every Excalidraw embed to a PNG attachment and point the embeds at the
+ * rendered images, uploading the drawing source alongside each one.
+ *
+ * Confluence has no notion of an Excalidraw drawing, so an embed that reaches
+ * it untranslated is simply a broken image. Rendering happens here rather than
+ * in the storage converter because it needs the vault (to find the drawing) and
+ * the Excalidraw plugin (to draw it) — neither of which the pure core has.
+ *
+ * Returns the drawings that could neither be rendered nor satisfied by an
+ * earlier upload. The caller refuses the upload in that case: publishing a page
+ * whose diagrams silently vanished is worse than not publishing it.
+ */
+async function renderExcalidrawEmbeds(
+  plugin: ConfluenceToolsPlugin,
+  note: TFile,
+  pageId: string,
+  markdown: string,
+  sidecar: {
+    diagrams?: Record<string, string>;
+    imageHashes?: Record<string, string>;
+  },
+): Promise<{ markdown: string; unrenderable: string[] }> {
+  const targets = findExcalidrawEmbeds(markdown);
+  if (!targets.length) return { markdown, unrenderable: [] };
+
+  const ctx = plugin.buildContext();
+  const client = plugin.client();
+  const renderer = ctx.diagrams;
+  const canRender = renderer?.available() ?? false;
+
+  // Drop entries for diagrams no longer embedded, so the map can't resurrect a
+  // deleted drawing's link if an unrelated attachment reuses its filename.
+  sidecar.diagrams = pruneDiagramMap(markdown, sidecar.diagrams ?? {});
+  sidecar.imageHashes = sidecar.imageHashes ?? {};
+
+  const rendered = new Map<string, string>();
+  const unrenderable: string[] = [];
+
+  for (const target of targets) {
+    const name = renderedNameFor(target);
+    const file = plugin.app.metadataCache.getFirstLinkpathDest(
+      target,
+      note.path,
+    );
+
+    // No Excalidraw (mobile, or the plugin is disabled), or the drawing isn't
+    // in this vault. If an earlier upload already produced this image, the
+    // attachment on the page is still correct — keep pointing at it rather than
+    // blocking an unrelated text edit. Only a diagram that has never been
+    // rendered stops the upload.
+    const png =
+      canRender && file ? await renderer?.renderPng(file.path, 2) : null;
+    if (!png) {
+      if (sidecar.diagrams[name] === target) rendered.set(target, name);
+      else unrenderable.push(target);
+      continue;
+    }
+
+    const hash = await ctx.hasher.sha256Hex(png);
+    if (sidecar.imageHashes[name] !== hash) {
+      await client.uploadAttachment(pageId, name, png, "image/png");
+      sidecar.imageHashes[name] = hash;
+
+      // The drawing source rides along so it can be recovered into another
+      // vault. Confluence never renders it — it is an archive copy, refreshed
+      // only when the image it belongs to actually changed.
+      if (file) {
+        const srcName = sourceNameFor(target);
+        const srcBytes = new TextEncoder().encode(
+          await plugin.app.vault.read(file),
+        );
+        const srcHash = await ctx.hasher.sha256Hex(srcBytes);
+        if (sidecar.imageHashes[srcName] !== srcHash) {
+          await client.uploadAttachment(
+            pageId,
+            srcName,
+            srcBytes,
+            "text/markdown",
+          );
+          sidecar.imageHashes[srcName] = srcHash;
+        }
+      }
+    }
+    rendered.set(target, name);
+  }
+
+  return {
+    markdown: rewriteExcalidrawEmbeds(markdown, rendered, sidecar.diagrams),
+    unrenderable,
+  };
+}
+
 /** Apply link/image translation and write a downloaded page + sidecar to a note
  * path. Shared by single-page download, create, and download-all. */
 async function writeDownloadedPage(
@@ -137,12 +245,38 @@ async function writeDownloadedPage(
   const ctx = plugin.buildContext();
   const index = buildPageIndex(plugin.app);
   result.sidecar.images = result.sidecar.images ?? {};
+  // Read the prior sidecar first: the diagram map lives there, and the embeds
+  // have to be restored before anything downstream reads the body.
+  const prior = await readSidecar(ctx.fs, ctx.path, notePath);
+  // Display hints live only in the vault — Confluence never sees them — so they
+  // come from the prior sidecar rather than from what was just downloaded.
+  if (prior?.embedSizes) result.sidecar.embedSizes = prior.embedSizes;
   let markdown = canonicalLinksToWiki(result.markdown, (id) =>
     index.idToNote(id),
   );
-  markdown = canonicalImagesToEmbeds(markdown, result.sidecar.images);
+  markdown = canonicalImagesToEmbeds(
+    markdown,
+    result.sidecar.images,
+    result.sidecar.embedSizes,
+  );
+  // Point rendered-diagram embeds back at the drawings they came from. Doing it
+  // here — before the note is written and before attachments are fetched —
+  // means the rendered PNG is never written into the vault as a stray file, and
+  // the link the user edits is always the drawing.
+  if (prior?.diagrams) {
+    result.sidecar.diagrams = prior.diagrams;
+    markdown = restoreExcalidrawEmbeds(markdown, prior.diagrams);
+  }
+  // Keep the recorded attachment hashes: a diagram's PNG is deliberately not
+  // re-downloaded, so without this its hash would be lost and the next upload
+  // would re-render and re-upload an identical image.
+  if (prior?.imageHashes) {
+    result.sidecar.imageHashes = {
+      ...prior.imageHashes,
+      ...(result.sidecar.imageHashes ?? {}),
+    };
+  }
   // Carry over any locally-resolved comment refs from a prior sidecar.
-  const prior = await readSidecar(ctx.fs, ctx.path, notePath);
   if (prior?.resolved?.length) {
     result.sidecar.resolved = [
       ...new Set([...(result.sidecar.resolved ?? []), ...prior.resolved]),
@@ -232,13 +366,34 @@ async function readPageIdAt(
   }
 }
 
+/**
+ * Ask before overwriting a note — but only when there is something to lose.
+ *
+ * Returns true (no prompt) when the note matches the last thing we synced, so
+ * refreshing a note that only changed in Confluence is silent. Returns the
+ * user's answer when the note has local edits.
+ */
+async function confirmOverwrite(
+  plugin: ConfluenceToolsPlugin,
+  notePath: string,
+): Promise<boolean> {
+  if (!(await hasLocalChangesAt(plugin, notePath))) return true;
+  return plugin
+    .buildContext()
+    .prompter.confirm(
+      `"${notePath}" has local changes that aren't in Confluence. Overwrite them with the latest version?`,
+    );
+}
+
 /** Decide where a downloaded page should be written, inside the active note's
- * folder. On a name clash: if the existing note is itself a Confluence download,
- * ask to overwrite (null = cancel); otherwise date-suffix the basename so a
+ * folder. On a name clash: if the existing note is this same Confluence page,
+ * refresh it in place (asking only when it has local edits); if it is a
+ * different Confluence page, ask; otherwise date-suffix the basename so a
  * hand-written note is never clobbered. */
 async function resolveDownloadPath(
   plugin: ConfluenceToolsPlugin,
   title: string,
+  pageId: string,
 ): Promise<string | null> {
   const folder = activeFolder(plugin);
   const base = sanitizeTitle(title);
@@ -248,9 +403,13 @@ async function resolveDownloadPath(
   if (!(await plugin.app.vault.adapter.exists(target))) return target;
 
   const existingPageId = await readPageIdAt(plugin, target);
+  if (existingPageId === pageId) {
+    // Same page — this is a refresh, not a clash.
+    return (await confirmOverwrite(plugin, target)) ? target : null;
+  }
   if (existingPageId) {
     const ok = await plugin.buildContext().prompter.confirm(
-      `"${base}.md" already exists (Confluence page ${existingPageId}). Overwrite with the latest from Confluence?`,
+      `"${base}.md" already exists but is a different Confluence page (${existingPageId}). Replace it with page ${pageId}?`,
     );
     return ok ? target : null;
   }
@@ -314,13 +473,14 @@ export async function downloadCommand(
 
     let notePath: string | null;
     if (activePath) {
-      // Re-pulling the open note: write back to the same file (after confirm).
-      const ok = await plugin.buildContext().prompter.confirm(
-        `Overwrite "${activePath}" with the latest from Confluence?`,
-      );
-      notePath = ok ? activePath : null;
+      // Re-pulling the open note: write back to the same file. Only ask first
+      // when the note actually has edits that aren't in Confluence — a plain
+      // "the page moved on" refresh has nothing to lose and shouldn't nag.
+      notePath = (await confirmOverwrite(plugin, activePath))
+        ? activePath
+        : null;
     } else {
-      notePath = await resolveDownloadPath(plugin, result.title);
+      notePath = await resolveDownloadPath(plugin, result.title, pageId);
     }
     if (!notePath) {
       progress.cancel("Download cancelled.");
@@ -378,7 +538,7 @@ export async function createConfluencePage(
       now: new Date().toISOString(),
       onStep: (m) => progress.step(m),
     });
-    const notePath = await resolveDownloadPath(plugin, title);
+    const notePath = await resolveDownloadPath(plugin, title, created.id);
     if (!notePath) {
       progress.cancel(
         `Created page ${created.id} in Confluence — skipped writing a local note.`,
@@ -476,6 +636,157 @@ export async function downloadAllCommand(
   );
 }
 
+/** Whether overwriting `notePath` would destroy edits made since its last sync.
+ *
+ * `unknown` means there's no recorded baseline (a hand-written note, or one
+ * synced before baselines existed) — the caller treats that as "don't touch"
+ * unless the user opted into overwriting. */
+async function localNoteState(
+  plugin: ConfluenceToolsPlugin,
+  notePath: string,
+): Promise<"missing" | "clean" | "dirty" | "unknown"> {
+  const ctx = plugin.buildContext();
+  if (!(await ctx.fs.exists(notePath))) return "missing";
+  try {
+    const sidecar = await readSidecar(ctx.fs, ctx.path, notePath);
+    const base = sidecar?.baseObsidian;
+    if (base == null) return "unknown";
+    const body = parseFrontmatter(await ctx.fs.read(notePath)).body;
+    const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+    return norm(body) === norm(base) ? "clean" : "dirty";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** pageId → note path for every Confluence-linked note in the vault. */
+function notePathsByPageId(plugin: ConfluenceToolsPlugin): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const f of plugin.app.vault.getMarkdownFiles()) {
+    const pid = plugin.app.metadataCache.getFileCache(f)?.frontmatter?.pageId;
+    if (pid !== undefined && pid !== null && pid !== "") {
+      const id = String(pid);
+      if (!map.has(id)) map.set(id, f.path);
+    }
+  }
+  return map;
+}
+
+/**
+ * Download a page and every descendant the user can access into a folder.
+ *
+ * Child pages go into a folder named after their parent note, mirroring the
+ * Confluence hierarchy. Notes already downloaded elsewhere in the vault are
+ * refreshed in place instead of being duplicated into the tree, and notes with
+ * unsynced local edits are skipped (unless the user opted to overwrite).
+ */
+export async function downloadTreeCommand(
+  plugin: ConfluenceToolsPlugin,
+  opts: {
+    pageId: string;
+    folder: string;
+    maxDepth?: number;
+    overwriteLocalChanges?: boolean;
+  },
+): Promise<void> {
+  if (!plugin.settings.baseUrl) {
+    new Notice("Set the Confluence base URL in settings first.");
+    return;
+  }
+
+  const client = plugin.client();
+  const ctx = plugin.buildContext();
+  const progress = new Progress(plugin, "Download tree");
+  try {
+    progress.start("Scanning page tree…");
+    const tree = await fetchPageTree(client, opts.pageId, {
+      maxDepth: opts.maxDepth,
+      onStep: (message, found) => progress.step(`${message} (${found} found)`),
+    });
+    const total = countPages(tree);
+
+    const where = opts.folder || "the vault root";
+    const ok = await ctx.prompter.confirm(
+      `Download ${total} page(s) under "${tree.title}" into ${where}?`,
+    );
+    if (!ok) {
+      progress.cancel("Download cancelled.");
+      return;
+    }
+
+    const existing = notePathsByPageId(plugin);
+    const plan = planTreeLayout(tree, {
+      folder: opts.folder,
+      sanitize: sanitizeTitle,
+      existingPath: (id) => existing.get(id) ?? null,
+    });
+    // Parents first, so the non-recursive vault mkdir always has its parent.
+    for (const dir of foldersForPlan(plan)) {
+      await ctx.fs.mkdir(dir);
+    }
+
+    let failed = 0;
+    const written: string[] = [];
+    const skipped: string[] = [];
+
+    for (const [i, page] of plan.entries()) {
+      progress.step(`${i + 1}/${plan.length} — ${page.title}`);
+      const state = await localNoteState(plugin, page.notePath);
+      if (!opts.overwriteLocalChanges && (state === "dirty" || state === "unknown")) {
+        skipped.push(page.notePath);
+        continue;
+      }
+      try {
+        const result = await downloadPageToObsidian(client, page.id, {
+          genId,
+          now: new Date().toISOString(),
+          resolvedRefs: await loadResolvedRefs(plugin, page.notePath),
+        });
+        await writeDownloadedPage(plugin, result, page.notePath, page.id);
+        written.push(page.notePath);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(`[confluence-tools] Tree: ${page.notePath} failed:`, e);
+        failed++;
+      }
+    }
+
+    if (written.length) {
+      progress.step("Syncing…");
+      await syncAfterDownload(plugin, written);
+    }
+
+    const parts = [`${written.length} page(s) downloaded`];
+    if (skipped.length) parts.push(`${skipped.length} skipped`);
+    if (failed) parts.push(`${failed} failed (see console)`);
+    progress.done(`"${tree.title}": ${parts.join(", ")}.`);
+
+    if (skipped.length) {
+      const shown = skipped.slice(0, 5).join("\n");
+      new Notice(
+        `Skipped ${skipped.length} note(s) with local changes:\n${shown}${
+          skipped.length > 5 ? `\n…and ${skipped.length - 5} more` : ""
+        }`,
+        10000,
+      );
+    }
+  } catch (e) {
+    progress.fail(e);
+  }
+}
+
+/** Palette entry: ask for the page, folder, and depth, then download the tree. */
+export async function downloadTreePromptCommand(
+  plugin: ConfluenceToolsPlugin,
+): Promise<void> {
+  if (!plugin.settings.baseUrl) {
+    new Notice("Set the Confluence base URL in settings first.");
+    return;
+  }
+  const { DownloadTreeModal } = await import("./tree-modal.js");
+  new DownloadTreeModal(plugin).open();
+}
+
 /** Upload the active note back to Confluence. */
 export async function uploadCommand(
   plugin: ConfluenceToolsPlugin,
@@ -507,14 +818,47 @@ export async function uploadCommand(
 
   const progress = new Progress(plugin, "Upload");
   try {
-    progress.start("Uploading images…");
+    progress.start("Rendering diagrams…");
+    // Excalidraw drawings become PNG attachments, and their embeds are
+    // rewritten to name the render so the attachment translation below carries
+    // them like any other image. `markdown` itself is left alone — it is what
+    // is on disk, and it stays the change-gutter base further down.
+    const drawn = await renderExcalidrawEmbeds(
+      plugin,
+      file,
+      pageId,
+      markdown,
+      sidecar,
+    );
+    if (drawn.unrenderable.length) {
+      progress.cancel();
+      new Notice(
+        `Upload cancelled — no image available for ${drawn.unrenderable.join(", ")}. ` +
+          `These drawings have never been uploaded from this page, and Excalidraw isn't ` +
+          `available here to render them. Upload once from a desktop vault with the ` +
+          `Excalidraw plugin enabled; after that, edits from anywhere are fine.`,
+        15000,
+      );
+      return;
+    }
+
+    progress.step("Uploading images…");
     // Upload referenced vault images as attachments (skipping unchanged ones).
-    await uploadReferencedImages(plugin, file, pageId, markdown, sidecar);
+    await uploadReferencedImages(plugin, file, pageId, drawn.markdown, sidecar);
 
     // Translate [[wikilinks]] → pageid: links and ![[embeds]] → attachment refs.
     const index = buildPageIndex(plugin.app);
-    let canonicalish = wikiLinksToCanonical(markdown, (n) => index.noteToId(n));
-    canonicalish = embedsToCanonicalImages(canonicalish, sidecar.images);
+    let canonicalish = wikiLinksToCanonical(drawn.markdown, (n) =>
+      index.noteToId(n),
+    );
+    // Rebuilt from scratch each upload so the map mirrors the note exactly and
+    // a hint cannot outlive the embed it belonged to.
+    sidecar.embedSizes = {};
+    canonicalish = embedsToCanonicalImages(
+      canonicalish,
+      sidecar.images,
+      sidecar.embedSizes,
+    );
 
     const result = await uploadObsidianPage(
       plugin.client(),
@@ -539,7 +883,12 @@ export async function uploadCommand(
       conflictMd = canonicalImagesToEmbeds(
         conflictMd,
         conv.sidecar.images ?? {},
+        sidecar.embedSizes,
       );
+      // The merged document came back from Confluence naming the rendered PNGs;
+      // restore the drawing links so resolving a conflict doesn't cost the user
+      // their editable diagrams.
+      conflictMd = restoreExcalidrawEmbeds(conflictMd, sidecar.diagrams);
       await plugin.app.vault.modify(file, conflictMd);
       sidecar.comments = conv.sidecar.comments;
       await writeSidecar(ctx.fs, ctx.path, file.path, sidecar);
@@ -556,6 +905,9 @@ export async function uploadCommand(
     const uploadedAt = new Date().toISOString();
     sidecar.baseMarkdown = parseHeader(result.canonical).body;
     sidecar.baseObsidian = parseFrontmatter(markdown).body;
+    // The merge base comes from reading the page back, so the next upload
+    // compares like with like. Absent only when that read-back failed.
+    if (result.baseBlocks) sidecar.baseBlocks = result.baseBlocks;
     sidecar.version = result.newVersion;
     sidecar.downloadedAt = uploadedAt;
     await writeSidecar(ctx.fs, ctx.path, file.path, sidecar);

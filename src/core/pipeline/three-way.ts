@@ -18,13 +18,46 @@ import { splitDetachedSection } from "../../sync/detached.js";
 import { buildHeadingMap, mergeDocument, type SyncBlock } from "../../sync/merge.js";
 
 export interface ThreeWayInput {
-  /** Canonical body (no header) of the last-synced base, or null for 2-way. */
+  /**
+   * The last-synced remote, already in block form — the exact output of
+   * `remoteMergeBase` at the previous sync. Preferred over `baseBody`.
+   *
+   * Why it matters: the base has to be expressed the way the *merge* reads the
+   * remote, not the way the note is written. Deriving it from canonical
+   * markdown instead loses the distinction — re-parsing splits any block that
+   * contains a blank line, and normalizes whitespace the storage converter
+   * emits — so nearly every block looked "changed on the remote" even when
+   * Confluence held exactly what we last uploaded, and any block the user had
+   * also edited became a conflict.
+   */
+  baseBlocks?: SyncBlock[] | null;
+  /** Canonical body of the last-synced base. Fallback for sidecars written
+   * before `baseBlocks` was recorded, and for the 2-way case (null). */
   baseBody: string | null;
   /** Canonical body (no header) of the user's current note. */
   localBody: string;
   /** Enriched remote storage HTML. */
   remoteStorageHtml: string;
   remoteComments: RawComment[];
+}
+
+/**
+ * The merge's view of a remote page: the block list a later merge will compare
+ * against. Persist this at every sync point as the next merge's base.
+ */
+export function remoteMergeBase(
+  storageHtml: string,
+  comments: RawComment[] = [],
+): SyncBlock[] {
+  return blocksFromStorage(storageHtml, comments);
+}
+
+/** True when the remote holds exactly what the base recorded. */
+export function sameAsBase(base: SyncBlock[], remote: SyncBlock[]): boolean {
+  if (base.length !== remote.length) return false;
+  return base.every(
+    (b, i) => b.text === remote[i]?.text && b.nodeId === remote[i]?.nodeId,
+  );
 }
 
 export interface ThreeWayResult {
@@ -51,9 +84,8 @@ export function threeWayMerge(input: ThreeWayInput): ThreeWayResult {
     input.remoteStorageHtml,
     input.remoteComments,
   );
-  const baseBlocks: SyncBlock[] | null = input.baseBody
-    ? toBlocks(input.baseBody)
-    : null;
+  const baseBlocks: SyncBlock[] | null =
+    input.baseBlocks ?? (input.baseBody ? toBlocks(input.baseBody) : null);
 
   const result = mergeDocument({
     base: baseBlocks,

@@ -14,6 +14,8 @@ import { findUnparsedConfluenceLinks, resolveConfluencePageUrls, resolveLocalPag
 import { parseHeader } from '../md-header.js';
 import { loadPageCache, savePageCache, validatePageLinks } from '../page-cache.js';
 import { markdownToStorageHtml, replaceNodesById } from '../storage-dom.js';
+import { isSidecarMarkdown } from './page-files.js';
+import { writeLocalBaseSidecar } from '../sync/local-changes.js';
 
 const { prompt } = enquirer;
 
@@ -360,6 +362,14 @@ export async function uploadAll(opts: Options): Promise<void> {
      * track what was uploaded and when.
      * How: Stage and commit only this specific file with a standardized message.
      */
+    // The just-uploaded file is now the baseline: a later download compares
+    // against it to tell "edited locally" from "never touched".
+    try {
+      writeLocalBaseSidecar(file, fs.readFileSync(file, 'utf8'));
+    } catch (err) {
+      dbg(`failed to refresh local baseline for ${rel}: ${String(err)}`);
+    }
+
     dbg(`committing ${rel} to git`);
     await commitFile(opts.cwd, file);
     dbg(`done with ${rel}`);
@@ -481,7 +491,7 @@ function walkMarkdown(
     const stat = fs.statSync(p);
     if (stat.isDirectory()) {
       out.push(...walkMarkdown(p, includeGitignored));
-    } else if (/\.mdx?$/.test(entry)) {
+    } else if (/\.mdx?$/.test(entry) && !isSidecarMarkdown(entry)) {
       out.push(p);
     }
   }

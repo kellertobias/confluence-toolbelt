@@ -35,7 +35,24 @@ npm run dev:plugin            # watch mode while developing
 
 ### Configure & use
 
-Set your Confluence base URL, email, and API token in the plugin's settings (replaces the CLI's `.env`). Then run the commands from the command palette: **Download Confluence page**, **Upload current note to Confluence**, **Search Confluence and download**, **Test Confluence connection**.
+Set your Confluence base URL, email, and API token in the plugin's settings (replaces the CLI's `.env`). Then run the commands from the command palette: **Download Confluence page**, **Download Confluence page tree**, **Upload current note to Confluence**, **Search Confluence and download**, **Test Confluence connection**.
+
+**Download Confluence page tree** (also a button in the side panel) takes a page URL or ID and
+pulls that page plus every child page you can access. You pick the destination folder from a
+dropdown of the vault's folders, and how many levels to follow. Children are written into a
+folder named after their parent note, mirroring the Confluence hierarchy:
+
+```
+Handbook.md
+Handbook/
+  Onboarding.md
+  Onboarding/
+    Week One.md
+```
+
+Notes already in the vault for those pages are refreshed in place rather than duplicated. Notes
+you have edited since their last sync are skipped and listed afterwards — turn on **Overwrite
+local changes** in the dialog if you want a hard reset from Confluence instead.
 
 Releases are produced by [`@semantic-release`](.releaserc.json) on every push to `main`: it computes the version from Conventional Commits, syncs `manifest.json`/`versions.json` ([version-bump.mjs](version-bump.mjs)), bundles the plugin, and attaches the assets to the GitHub release. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) builds, tests, type-checks, and bundles the plugin (including a node-builtin guard for mobile-safety) on every PR.
 
@@ -76,6 +93,44 @@ When downloading from a URL or pageId, the tool will:
 - Automatically commit the file to git
 
 ⚠️ If you want a file to be read-only, you can add the `READONLY` flag to the header. This is helpful for reference pages and templates that should not be modified.
+
+### Downloading a Whole Page Tree
+
+To pull a page together with every child page you have access to, add `--tree` (or use the
+`download-tree` spelling):
+
+```bash
+# Downloads the page and all descendants into the current folder
+npx @tobisk/confluence-tools download --tree https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page+Title
+
+# Same thing, by pageId, into a target folder
+npx @tobisk/confluence-tools download-tree 123456 docs/handbook
+
+# Only the page and its direct children
+npx @tobisk/confluence-tools download-tree 123456 --depth 1
+```
+
+The hierarchy is mirrored on disk — a page becomes `<Title>.md`, and its children live in a
+folder named after it:
+
+```
+Handbook.md
+Handbook/
+  Onboarding.md
+  Onboarding/
+    Week-One.md
+  Tooling.md
+```
+
+Pages already downloaded elsewhere in the folder are refreshed **in place** (matched by their
+`pageId` header) instead of being duplicated into the tree, and their children are placed
+relative to where they actually live.
+
+**Local changes are never overwritten silently.** Before replacing an existing file, the tool
+compares it against the markdown it last wrote (kept in a hidden `.<name>.base.md` sidecar,
+falling back to git `HEAD`). Files that are provably unchanged are updated; files with local
+edits — or files the tool has no baseline for, such as hand-written notes — are skipped and
+listed at the end of the run. Pass `--force` to overwrite them anyway.
 
 ### Syncing Changes (WIP, Currently being developed.)
 
@@ -557,6 +612,48 @@ Indented code blocks (4+ spaces) are also supported:
     const x = 1;
     console.log(x);
 ```
+
+### Excalidraw Diagrams (Obsidian plugin only)
+
+Excalidraw drawings embedded in a note are rendered to PNG and attached to the
+Confluence page on upload:
+
+```markdown
+![[Architecture.excalidraw]]
+```
+
+becomes an `Architecture.png` attachment shown inline on the page. The drawing
+source is uploaded alongside it as `Architecture.excalidraw.md`, so the editable
+original travels with the page and can be dropped into another vault.
+
+**Your local link survives the round-trip.** Confluence only ever sees the PNG,
+but the mapping `Architecture.png → Architecture.excalidraw` is recorded in the
+note's sidecar, so downloading the page restores `![[Architecture.excalidraw]]`
+rather than leaving the note pointing at the render. The rendered PNG is never
+written into your vault, and any size hint (`![[Architecture.excalidraw|400]]`)
+is preserved. Someone else downloading the same page has no such mapping and
+correctly keeps `![[Architecture.png]]` — they have no drawing to link to.
+
+Rendering goes through the [Excalidraw
+plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin)'s own
+`ExcalidrawAutomate` API rather than a bundled copy of Excalidraw, so what
+Confluence receives is exactly what you see in your vault. Images are rendered
+at 2× scale on a light theme (Confluence pages are light), and re-uploaded only
+when the drawing actually changed.
+
+Where Excalidraw isn't available — mobile, or the plugin disabled — the
+behaviour depends on whether the page already has an image:
+
+- **Already uploaded once:** the existing attachment is reused untouched and the
+  upload proceeds. Editing a page's text from your phone never destroys a
+  diagram rendered on desktop.
+- **Never uploaded:** the upload is refused with a notice naming the drawings.
+  Publishing a page whose diagrams silently vanished is worse than not
+  publishing it. Upload once from a desktop vault with Excalidraw enabled; after
+  that, edits from anywhere are fine.
+
+This is plugin-only — the CLI has no Excalidraw to render with, and leaves such
+embeds untouched.
 
 ### Mermaid Diagrams
 

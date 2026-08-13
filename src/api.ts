@@ -216,6 +216,49 @@ export class ConfluenceClient {
   }
 
   /**
+   * List the direct child pages of a page, in Confluence's own ordering.
+   *
+   * Why: `download --tree` walks a page hierarchy; this is the one hop it needs.
+   *
+   * How: v2 `/pages/{id}/children`, following `_links.next` until the cursor is
+   * exhausted. A non-OK response means the page is gone or the caller lacks
+   * permission — both are reported as "no children" so a tree walk can skip the
+   * subtree instead of failing the whole run.
+   */
+  async getChildPages(
+    pageId: string,
+  ): Promise<{ id: string; title: string; spaceId?: string }[]> {
+    const out: { id: string; title: string; spaceId?: string }[] = [];
+    let url: string = this.build(`/api/v2/pages/${pageId}/children`, {
+      limit: 250,
+    });
+    // Guard against a server that keeps handing back a `next` cursor.
+    for (let page = 0; page < 100 && url; page++) {
+      const res = await this.fetchWithDebug(url, { headers: this.headers });
+      if (!res.ok) {
+        break;
+      }
+      const data = await res.json().catch(() => ({}) as any);
+      for (const r of ((data as any)?.results ?? []) as any[]) {
+        if (r?.status && r.status !== "current") {
+          continue; // drafts/trashed pages are not part of the tree
+        }
+        const id = String(r?.id ?? "");
+        if (id) {
+          out.push({
+            id,
+            title: String(r?.title ?? ""),
+            spaceId: r?.spaceId ? String(r.spaceId) : undefined,
+          });
+        }
+      }
+      const next = (data as any)?._links?.next;
+      url = next ? new URL(String(next), this.base).toString() : "";
+    }
+    return out;
+  }
+
+  /**
    * List a page's attachments with their download paths and media types.
    * Used on download to fetch the actual binaries into the vault so embeds
    * (e.g. SVGs) render.

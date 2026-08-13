@@ -14,3 +14,17 @@ export function baseSidecarPath(filePath: string): string {
     `.${path.basename(filePath)}.base.confluence`,
   );
 }
+
+/**
+ * Sidecar holding the exact markdown we last wrote for a file.
+ *
+ * Why: lets a re-download tell "the user edited this locally" apart from "the
+ * remote moved on" without relying on git being present. Hidden + gitignored,
+ * same as the storage-HTML baseline.
+ */
+export function localBaseSidecarPath(filePath: string): string {
+  return path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.base.md`,
+  );
+}

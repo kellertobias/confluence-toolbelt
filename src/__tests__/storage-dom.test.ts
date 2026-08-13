@@ -2466,3 +2466,135 @@ describe('expand macros', () => {
     expect(back).toContain('<!-- /expand -->');
   });
 });
+
+describe('panel bodies', () => {
+  const md = (html: string) =>
+    storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n\n');
+
+  it('keeps a code block nested inside an info panel', () => {
+    const html =
+      '<ac:structured-macro ac:name="info"><ac:rich-text-body>' +
+      '<p>could return:</p>' +
+      '<ac:structured-macro ac:name="code">' +
+      '<ac:parameter ac:name="language">json</ac:parameter>' +
+      '<ac:plain-text-body><![CDATA[{\n  "a": [1,2]\n}]]></ac:plain-text-body>' +
+      '</ac:structured-macro>' +
+      '</ac:rich-text-body></ac:structured-macro>';
+    const out = md(html);
+    // Every line of the fenced block stays inside the blockquote, so the panel
+    // survives as a callout in Obsidian.
+    expect(out).toContain('> ```json');
+    expect(out).toContain('> {');
+    expect(out).toContain('>   "a": [1,2]');
+    expect(out).toContain('> ```');
+    expect(out).not.toContain('MD_CODE');
+  });
+
+  it('does not truncate a panel at a nested macro', () => {
+    const html =
+      '<ac:structured-macro ac:name="info"><ac:rich-text-body>' +
+      '<p>before</p>' +
+      '<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[x]]></ac:plain-text-body></ac:structured-macro>' +
+      '<p>after</p>' +
+      '</ac:rich-text-body></ac:structured-macro>' +
+      '<p>outside</p>';
+    const out = md(html);
+    expect(out).toContain('> before');
+    expect(out).toContain('> after');
+    expect(out).toContain('outside');
+    expect(out).not.toContain('rich-text-body');
+  });
+
+  it('converts an ADF-extension panel and drops its duplicate fallback', () => {
+    const html =
+      '<ac:adf-extension><ac:adf-node type="panel">' +
+      '<ac:adf-attribute key="panel-type">note</ac:adf-attribute>' +
+      '<ac:adf-attribute key="local-id">93a79b2c2404</ac:adf-attribute>' +
+      '<ac:adf-content><p><strong>Scope</strong></p></ac:adf-content>' +
+      '</ac:adf-node>' +
+      '<ac:adf-fallback><div class="panel"><p><strong>Scope</strong></p></div></ac:adf-fallback>' +
+      '</ac:adf-extension>';
+    const out = md(html);
+    expect(out).toContain('> <!-- panel:note:note -->');
+    expect(out).toContain('> **Scope**');
+    // The attribute values must not leak into the body, and the fallback must
+    // not produce a second copy of the content.
+    expect(out).not.toContain('93a79b2c2404');
+    expect(out.match(/\*\*Scope\*\*/g)).toHaveLength(1);
+  });
+
+  it('separates two adjacent panels with a blank line', () => {
+    const html =
+      '<ac:structured-macro ac:name="note"><ac:rich-text-body><p>one</p></ac:rich-text-body></ac:structured-macro>' +
+      '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>two</p></ac:rich-text-body></ac:structured-macro>';
+    const out = md(html);
+    expect(out).toContain('> one\n\n> <!-- panel:info:info -->');
+  });
+
+  it('round-trips a code block inside a panel back to a code macro', () => {
+    const md = [
+      '> <!-- panel:info:info -->',
+      '> could return:',
+      '>',
+      '> ```json',
+      '> {"a": 1}',
+      '> ```',
+    ].join('\n');
+    const back = markdownToStorageHtml(md);
+    expect(back).toContain('<ac:structured-macro ac:name="info">');
+    expect(back).toContain('<ac:structured-macro ac:name="code">');
+    expect(back).toContain('{"a": 1}');
+  });
+});
+
+describe('image captions', () => {
+  it('flattens macros in a caption instead of breaking the image link', () => {
+    const html =
+      '<ac:image><ri:attachment ri:filename="d.png" />' +
+      '<ac:caption><p>' +
+      '<ac:structured-macro ac:name="status">' +
+      '<ac:parameter ac:name="title">MVP</ac:parameter>' +
+      '<ac:parameter ac:name="colour">Yellow</ac:parameter>' +
+      '</ac:structured-macro> the diagram</p></ac:caption></ac:image>';
+    const out = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    expect(out).toContain('![MVP the diagram](#d.png)');
+    expect(out).not.toContain('MD_STATUS');
+  });
+});
+
+describe('inline status macros on upload', () => {
+  it('converts a status that is not alone on its line', () => {
+    const back = markdownToStorageHtml(
+      'Ship <!-- status:yellow:MVP --> soon\n',
+    );
+    expect(back).toContain('<ac:structured-macro ac:name="status">');
+    expect(back).toContain('<ac:parameter ac:name="title">MVP</ac:parameter>');
+    expect(back).toContain('<ac:parameter ac:name="colour">yellow</ac:parameter>');
+    expect(back).not.toContain('&lt;!--');
+  });
+
+  it('converts a status inside a heading', () => {
+    const back = markdownToStorageHtml('## Paths <!-- status:green:FULL -->\n');
+    expect(back).toContain('<ac:parameter ac:name="title">FULL</ac:parameter>');
+    expect(back).not.toContain('&lt;!--');
+  });
+});
+
+describe('TOC widget', () => {
+  it('survives storage → Obsidian → storage', () => {
+    const html =
+      '<h1>Title</h1>' +
+      '<ac:structured-macro ac:name="toc" ac:schema-version="1"/>' +
+      '<h2>One</h2>';
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n\n');
+    expect(md).toContain('<!-- widget:TOC -->');
+    const back = markdownToStorageHtml(md);
+    expect(back).toContain('ac:name="toc"');
+  });
+});

@@ -34,6 +34,12 @@ function printHelp() {
       "  cli init                                    # Initialize git, .gitignore, and .env",
       "  cli download [--force] [--verbose]         # Download all mapped/headered pages",
       "  cli pull [--force] [--verbose]             # Alias for 'download'",
+      "  cli download --tree <url|pageId> [dir] [--depth n] [--force] [--verbose]",
+      "  cli download-tree <url|pageId> [dir] ...    # Same command, spelled out",
+      "                                              #   Download a page and every child page you can",
+      "                                              #   access into <dir> (default: current folder),",
+      "                                              #   mirroring the hierarchy as folders.",
+      "                                              #   Files with local changes are skipped unless --force.",
       "  cli upload [--all] [--verbose] [--debug] [file...]   # Upload pages:",
       "                                                     #   --all: upload all markdown files",
       "                                                     #   [file...]: upload specific files",
@@ -69,10 +75,19 @@ async function main() {
       await initEnv({ cwd: process.cwd() });
       break;
     case "download":
-      await downloadAll({ cwd: process.cwd(), args });
-      break;
     case "pull":
-      await downloadAll({ cwd: process.cwd(), args });
+      if (args.includes("--tree")) {
+        const { downloadTree } = await import("./commands/download-tree.js");
+        await downloadTree({ cwd: process.cwd(), args });
+      } else {
+        await downloadAll({ cwd: process.cwd(), args });
+      }
+      break;
+    case "download-tree":
+      {
+        const { downloadTree } = await import("./commands/download-tree.js");
+        await downloadTree({ cwd: process.cwd(), args });
+      }
       break;
     case "upload":
       await uploadAll({ cwd: process.cwd(), args });

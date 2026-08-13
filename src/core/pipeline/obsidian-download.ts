@@ -14,6 +14,7 @@ import {
   type ObsidianSidecar,
 } from "../dialect/obsidian.js";
 import { storageToCanonical } from "./storage-to-canonical.js";
+import { remoteMergeBase } from "./three-way.js";
 
 export interface DownloadResult {
   title: string;
@@ -70,6 +71,9 @@ export async function downloadPageToObsidian(
     downloadedAt: opts.now,
     genId: opts.genId,
   });
+  // Record the remote exactly as a later merge will read it, so an unchanged
+  // page compares equal instead of drifting through the markdown round-trip.
+  sidecar.baseBlocks = remoteMergeBase(enriched, comments);
 
   return { title: page.title, version: page.version, markdown, sidecar };
 }

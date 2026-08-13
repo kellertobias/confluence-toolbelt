@@ -476,3 +476,295 @@
 .cf-change-removed-below::after {
   bottom: -3px;
 }
+
+/* ---------------------------------------------------------------------------
+   Confluence status lozenges
+   ---------------------------------------------------------------------------
+   Notes store a status as `<span class="badge-yellow">MVP</span>`. It has to be
+   a span: Obsidian sanitizes note HTML with DOMPurify and only adds `iframe` to
+   the tag allowlist, so a `<badge>` element is stripped to bare text — in
+   reading view and in Live Preview alike. `badge` is kept as an alias for the
+   plugin's own DOM (dialogs, which are not sanitized), and `.cf-lozenge` for
+   notes written before this spelling.
+
+   Specificity matters here. The geometry selector `span[class^="badge-"]` is
+   (0,1,1), so a bare `.badge-yellow` at (0,1,0) lost to the default colors set
+   alongside the geometry and every badge came out grey. Each color rule is
+   therefore qualified to (0,2,1), which also keeps themes from recoloring them.
+
+   The metrics and color pairs are Atlassian's own lozenge values, so a badge
+   reads the same here as on the Confluence page. */
+span[class^="badge-"],
+badge,
+.cf-lozenge {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 12px;
+  text-transform: uppercase;
+  vertical-align: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Confluence draws lozenges in its UI font, not the page's body font. */
+  font-family: var(--font-interface);
+  /* Fallback for a color we do not recognize; every known color overrides it. */
+  background-color: #dfe1e6;
+  color: #42526e;
+}
+span[class^="badge-"].badge-grey,
+badge[color="grey"],
+.cf-lozenge.cf-lozenge-grey {
+  background-color: #dfe1e6;
+  color: #42526e;
+}
+span[class^="badge-"].badge-gray,
+badge[color="gray"],
+.cf-lozenge.cf-lozenge-gray {
+  background-color: #dfe1e6;
+  color: #42526e;
+}
+span[class^="badge-"].badge-blue,
+badge[color="blue"],
+.cf-lozenge.cf-lozenge-blue {
+  background-color: #deebff;
+  color: #0747a6;
+}
+span[class^="badge-"].badge-green,
+badge[color="green"],
+.cf-lozenge.cf-lozenge-green {
+  background-color: #e3fcef;
+  color: #006644;
+}
+span[class^="badge-"].badge-yellow,
+badge[color="yellow"],
+.cf-lozenge.cf-lozenge-yellow {
+  background-color: #fff0b3;
+  color: #172b4d;
+}
+span[class^="badge-"].badge-red,
+badge[color="red"],
+.cf-lozenge.cf-lozenge-red {
+  background-color: #ffebe6;
+  color: #bf2600;
+}
+span[class^="badge-"].badge-purple,
+badge[color="purple"],
+.cf-lozenge.cf-lozenge-purple {
+  background-color: #eae6ff;
+  color: #403294;
+}
+
+/* Atlassian's dark-mode lozenge pairs, so badges stay legible on dark themes
+   instead of glowing light-on-light. */
+.theme-dark span[class^="badge-"],
+.theme-dark badge,
+.theme-dark .cf-lozenge {
+  background-color: #2c333a;
+  color: #9fadbc;
+}
+.theme-dark span[class^="badge-"].badge-grey,
+.theme-dark badge[color="grey"],
+.theme-dark .cf-lozenge.cf-lozenge-grey {
+  background-color: #2c333a;
+  color: #9fadbc;
+}
+.theme-dark span[class^="badge-"].badge-gray,
+.theme-dark badge[color="gray"],
+.theme-dark .cf-lozenge.cf-lozenge-gray {
+  background-color: #2c333a;
+  color: #9fadbc;
+}
+.theme-dark span[class^="badge-"].badge-blue,
+.theme-dark badge[color="blue"],
+.theme-dark .cf-lozenge.cf-lozenge-blue {
+  background-color: #09326c;
+  color: #85b8ff;
+}
+.theme-dark span[class^="badge-"].badge-green,
+.theme-dark badge[color="green"],
+.theme-dark .cf-lozenge.cf-lozenge-green {
+  background-color: #164b35;
+  color: #7ee2b8;
+}
+.theme-dark span[class^="badge-"].badge-yellow,
+.theme-dark badge[color="yellow"],
+.theme-dark .cf-lozenge.cf-lozenge-yellow {
+  background-color: #533f04;
+  color: #f5cd47;
+}
+.theme-dark span[class^="badge-"].badge-red,
+.theme-dark badge[color="red"],
+.theme-dark .cf-lozenge.cf-lozenge-red {
+  background-color: #5d1f1a;
+  color: #fd9891;
+}
+.theme-dark span[class^="badge-"].badge-purple,
+.theme-dark badge[color="purple"],
+.theme-dark .cf-lozenge.cf-lozenge-purple {
+  background-color: #352c63;
+  color: #b8acf6;
+}
+
+/* Status authoring: color swatches + live preview in the insert/edit dialog. */
+.cf-swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cf-swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+.cf-swatch:hover {
+  border-color: var(--background-modifier-border-hover);
+}
+.cf-swatch.is-active {
+  border-color: var(--interactive-accent);
+}
+.cf-preview {
+  padding: 6px 0;
+}
+
+/* A lozenge in reading view is clickable — it opens the edit dialog. */
+.cf-lozenge-editable {
+  cursor: pointer;
+}
+.cf-lozenge-editable:hover {
+  outline: 1px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------------------
+   Widget placeholders (Confluence TOC macro)
+   ---------------------------------------------------------------------------
+   The note stores `<div class="cf-widget" data-widget="TOC">`; the plugin fills
+   it with the note's live headings. The box styling also applies unrendered, so
+   the widget is at least visible when the plugin isn't active. */
+.cf-widget-box {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background-color: var(--background-secondary);
+  padding: 10px 14px;
+  margin: 1em 0;
+}
+.cf-widget-label {
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.cf-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cf-toc-item {
+  margin: 0;
+  line-height: 1.7;
+}
+.cf-toc-link {
+  text-decoration: none;
+}
+.cf-toc-link:hover {
+  text-decoration: underline;
+}
+.cf-toc-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Confluence panels
+   ---------------------------------------------------------------------------
+   Downloaded panels become Obsidian callouts. Obsidian's default callout is a
+   near-transparent tint with a heavy accent bar; Confluence draws a flat
+   colored box. These rules use Confluence's own panel fills (ADF palette) in
+   both themes so a note reads like the page it came from. */
+.callout[data-callout="info"],
+.callout[data-callout="note"],
+.callout[data-callout="tip"],
+.callout[data-callout="success"],
+.callout[data-callout="warning"],
+.callout[data-callout="error"] {
+  border: none;
+  border-radius: 3px;
+  mix-blend-mode: normal;
+  padding: 12px 16px;
+}
+.callout[data-callout="info"] {
+  --callout-color: 7, 71, 166;
+  background-color: #deebff;
+}
+.callout[data-callout="note"] {
+  --callout-color: 64, 50, 148;
+  background-color: #eae6ff;
+}
+.callout[data-callout="tip"],
+.callout[data-callout="success"] {
+  --callout-color: 0, 102, 68;
+  background-color: #e3fcef;
+}
+.callout[data-callout="warning"] {
+  --callout-color: 23, 43, 77;
+  background-color: #fffae6;
+}
+.callout[data-callout="error"] {
+  --callout-color: 191, 38, 0;
+  background-color: #ffebe6;
+}
+
+.theme-dark .callout[data-callout="info"] {
+  --callout-color: 133, 184, 255;
+  background-color: #0c294f;
+}
+.theme-dark .callout[data-callout="note"] {
+  --callout-color: 184, 172, 246;
+  background-color: #2b273f;
+}
+.theme-dark .callout[data-callout="tip"],
+.theme-dark .callout[data-callout="success"] {
+  --callout-color: 126, 226, 184;
+  background-color: #143a2b;
+}
+.theme-dark .callout[data-callout="warning"] {
+  --callout-color: 245, 205, 71;
+  background-color: #3b2e07;
+}
+.theme-dark .callout[data-callout="error"] {
+  --callout-color: 253, 152, 145;
+  background-color: #42221f;
+}
+
+/* Confluence panels have no title — just an icon beside the content. A
+   downloaded panel therefore has no callout title either, and Obsidian would
+   fill in the type name ("Info"). Keep the icon, drop the invented heading. */
+.callout.cf-panel-untitled > .callout-title {
+  padding: 0;
+  gap: 0;
+}
+.callout.cf-panel-untitled > .callout-title > .callout-title-inner,
+.callout.cf-panel-untitled > .callout-title > .callout-fold {
+  display: none;
+}
+.callout.cf-panel-untitled > .callout-title > .callout-icon {
+  color: rgb(var(--callout-color));
+}
+.callout.cf-panel-untitled > .callout-content > :first-child {
+  margin-top: 0;
+}
+.callout.cf-panel-untitled > .callout-content > :last-child {
+  margin-bottom: 0;
+}

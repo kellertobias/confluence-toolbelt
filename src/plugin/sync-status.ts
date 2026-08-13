@@ -4,9 +4,10 @@
  * version so the panel can show "up to date / update available / …".
  */
 
-import type { TFile } from "obsidian";
+import { TFile } from "obsidian";
 
 import { parseFrontmatter } from "../core/dialect/frontmatter.js";
+import { hasLocalChanges } from "../core/pipeline/local-changes.js";
 import { readSidecar } from "../core/pipeline/sidecar-store.js";
 import type ConfluenceToolsPlugin from "./main.js";
 
@@ -60,26 +61,40 @@ export function getActiveNoteInfo(
   };
 }
 
-/** Definitive local-change check: compare the note body to the last-synced
- * body stored in the sidecar (`baseObsidian`). Falls back to the mtime
- * heuristic only for notes with no stored base. Async because it reads the
- * sidecar + note content. */
+/**
+ * Definitive local-change check for a note path. Reads the note and its
+ * sidecar, then defers to the shared `hasLocalChanges` rule.
+ *
+ * This is what callers should use before offering to overwrite a note — a
+ * remote-only update is not a reason to warn the user about losing work.
+ */
+export async function hasLocalChangesAt(
+  plugin: ConfluenceToolsPlugin,
+  notePath: string,
+  fallback?: boolean,
+): Promise<boolean> {
+  try {
+    const file = plugin.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) return false; // nothing there to overwrite
+    const ctx = plugin.buildContext();
+    const sidecar = await readSidecar(ctx.fs, ctx.path, notePath);
+    return hasLocalChanges({
+      content: await plugin.app.vault.read(file),
+      base: sidecar?.baseObsidian,
+      mtime: file.stat.mtime,
+      fallback,
+    });
+  } catch {
+    return true; // can't tell → ask rather than clobber
+  }
+}
+
+/** Same check for the active note the side panel is describing. */
 export async function checkLocalChanges(
   plugin: ConfluenceToolsPlugin,
   info: ActiveNoteInfo,
 ): Promise<boolean> {
-  try {
-    const ctx = plugin.buildContext();
-    const sidecar = await readSidecar(ctx.fs, ctx.path, info.file.path);
-    const base = sidecar?.baseObsidian;
-    if (base == null) return info.modifiedLocally; // no content base → heuristic
-    const content = await plugin.app.vault.read(info.file);
-    const body = parseFrontmatter(content).body;
-    const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\n+$/, "");
-    return norm(body) !== norm(base);
-  } catch {
-    return info.modifiedLocally;
-  }
+  return hasLocalChangesAt(plugin, info.file.path, info.modifiedLocally);
 }
 
 export function computeState(

@@ -1,3 +1,7 @@
+## <small>2.10.1 (2026-08-11)</small>
+
+* fix(obsidian): render Confluence constructs and stop spurious merge conflicts ([d10ef07](https://github.com/kellertobias/confluence-toolbelt/commit/d10ef07))
+
 ## 2.10.0 (2026-07-02)
 
 * feat(storage-dom): round-trip markdown footnotes ([9d9e55a](https://github.com/kellertobias/confluence-toolbelt/commit/9d9e55a))
