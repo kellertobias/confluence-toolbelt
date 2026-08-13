@@ -19,31 +19,52 @@
  *    secure static mode, where foreignObject content is dropped — every label
  *    would come out blank, and the diagram would look plausible enough to
  *    publish. With this off, labels are real `<text>` elements.
- *  - `theme: "default"`. Confluence pages are light. A diagram inheriting a
- *    dark theme arrives as pale strokes on a dark rectangle in a white page.
+ *  - The theme, which the user picks in settings and which is shared with the
+ *    Excalidraw renderer so both kinds of diagram on a page match. It has to
+ *    be pinned to *something* rather than inherited from Obsidian: a diagram
+ *    that follows the vault's appearance would flip palette depending on which
+ *    machine published it.
  */
 
 import mermaid from "mermaid";
 
-import type { MermaidRenderer } from "../../core/ports.js";
+import type { DiagramTheme, MermaidRenderer } from "../../core/ports.js";
 
-/** Rendered at 2x and displayed at 1x, so the image stays sharp on a HiDPI
- * screen. Matches the Excalidraw renderer. */
-const BACKGROUND = "#ffffff";
+/**
+ * Canvas fill behind the diagram.
+ *
+ * A PNG with a transparent background reads as a grey box on Confluence's
+ * white page, so one is always painted. The dark value matches mermaid's own
+ * dark-theme background rather than pure black, which would swallow the
+ * diagram's darker strokes.
+ */
+const BACKGROUND: Record<DiagramTheme, string> = {
+  light: "#ffffff",
+  dark: "#1f2020",
+};
 
-let configured = false;
+/** Mermaid's built-in theme names. Its light theme is called "default". */
+const MERMAID_THEME: Record<DiagramTheme, "default" | "dark"> = {
+  light: "default",
+  dark: "dark",
+};
 
-function configure(): typeof mermaid {
-  if (!configured) {
+/** The theme the bundled instance is currently initialized with. Re-applied
+ * when the setting changes, so switching it takes effect on the next upload
+ * rather than on the next Obsidian restart. */
+let configuredTheme: DiagramTheme | null = null;
+
+function configure(theme: DiagramTheme): typeof mermaid {
+  if (configuredTheme !== theme) {
     mermaid.initialize({
       startOnLoad: false,
-      theme: "default",
+      theme: MERMAID_THEME[theme],
       securityLevel: "strict",
       htmlLabels: false,
       flowchart: { htmlLabels: false },
       class: { htmlLabels: false },
     });
-    configured = true;
+    configuredTheme = theme;
   }
   return mermaid;
 }
@@ -100,6 +121,7 @@ function svgToPng(
   svg: string,
   size: { width: number; height: number },
   scale: number,
+  background: string,
 ): Promise<Uint8Array | null> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -116,9 +138,7 @@ function svgToPng(
           resolve(null);
           return;
         }
-        // Confluence renders the page on white. Without this the PNG keeps a
-        // transparent background, which reads as a grey box in dark mode.
-        ctx.fillStyle = BACKGROUND;
+        ctx.fillStyle = background;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((blob) => {
@@ -145,20 +165,32 @@ function svgToPng(
  * another. */
 let seq = 0;
 
-export function createMermaidRenderer(): MermaidRenderer {
+/**
+ * @param theme - read per render, not captured, so a settings change applies
+ *                without reloading the plugin.
+ */
+export function createMermaidRenderer(
+  theme: () => DiagramTheme,
+): MermaidRenderer {
   return {
     available: canRasterize,
 
     async renderPng(source: string, scale: number): Promise<Uint8Array | null> {
       if (!canRasterize()) return null;
+      const chosen = theme();
       try {
-        const { svg } = await configure().render(
+        const { svg } = await configure(chosen).render(
           `cf-mermaid-${Date.now()}-${seq++}`,
           source,
         );
         const size = sizeOf(svg);
         if (!size) return null;
-        return await svgToPng(withExplicitSize(svg, size), size, scale);
+        return await svgToPng(
+          withExplicitSize(svg, size),
+          size,
+          scale,
+          BACKGROUND[chosen],
+        );
       } catch (e) {
         // Invalid syntax is the common case here, and it is the user's own
         // diagram — the upload falls back to the mermaid.ink URL rather than

@@ -35,7 +35,7 @@ npm run dev:plugin            # watch mode while developing
 
 ### Configure & use
 
-Set your Confluence base URL, email, and API token in the plugin's settings (replaces the CLI's `.env`). Then run the commands from the command palette: **Download Confluence page**, **Download Confluence page tree**, **Upload current note to Confluence**, **Search Confluence and download**, **Test Confluence connection**.
+Set your Confluence base URL, email, and API token in the plugin's settings (replaces the CLI's `.env`). A **Diagram theme** setting there (default **dark**) picks the palette for mermaid and Excalidraw diagrams rendered on upload — one setting for both, so the diagrams on a page match each other. It applies on the next upload of a note; already-published diagrams keep the theme they were rendered with until that note is uploaded again. Then run the commands from the command palette: **Download Confluence page**, **Download Confluence page tree**, **Upload current note to Confluence**, **Search Confluence and download**, **Test Confluence connection**.
 
 **Download Confluence page tree** (also a button in the side panel) takes a page URL or ID and
 pulls that page plus every child page you can access. You pick the destination folder from a

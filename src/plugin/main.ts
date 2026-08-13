@@ -196,8 +196,8 @@ export default class ConfluenceToolsPlugin extends Plugin {
       git: noopGit,
       prompter: obsidianPrompter(this.app),
       config: this.confluenceConfig(),
-      diagrams: createExcalidrawRenderer(this.app),
-      mermaid: createMermaidRenderer(),
+      diagrams: createExcalidrawRenderer(this.app, () => this.settings.diagramTheme),
+      mermaid: createMermaidRenderer(() => this.settings.diagramTheme),
     };
   }
 

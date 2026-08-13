@@ -12,14 +12,15 @@
  * instance must be reset first — otherwise leftovers from a previous call bleed
  * into the next diagram.
  *
- * The theme is pinned to light rather than following the user's Obsidian theme:
- * Confluence pages are light, and a dark-theme render arrives as pale strokes
- * on a dark rectangle in the middle of a white page.
+ * The theme comes from the plugin's own setting rather than from the vault's
+ * appearance, and is shared with the mermaid renderer so both kinds of diagram
+ * on a page match. Following Obsidian's theme instead would mean a drawing's
+ * palette depended on which machine published it.
  */
 
 import type { App } from "obsidian";
 
-import type { DiagramRenderer } from "../../core/ports.js";
+import type { DiagramRenderer, DiagramTheme } from "../../core/ports.js";
 
 const EXCALIDRAW_PLUGIN_ID = "obsidian-excalidraw-plugin";
 
@@ -66,7 +67,14 @@ function getAutomate(app: App): ExcalidrawAutomateLike | null {
   return ea && typeof ea.createPNG === "function" ? ea : null;
 }
 
-export function createExcalidrawRenderer(app: App): DiagramRenderer {
+/**
+ * @param theme - read per render, not captured, so a settings change applies
+ *                without reloading the plugin.
+ */
+export function createExcalidrawRenderer(
+  app: App,
+  theme: () => DiagramTheme,
+): DiagramRenderer {
   return {
     available: () => getAutomate(app) !== null,
 
@@ -85,7 +93,7 @@ export function createExcalidrawRenderer(app: App): DiagramRenderer {
           scale,
           exportSettings,
           loader,
-          "light",
+          theme(),
           10,
         );
         if (!blob) return null;

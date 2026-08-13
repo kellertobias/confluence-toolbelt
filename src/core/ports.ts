@@ -131,6 +131,10 @@ export interface Deflater {
   zlib(data: Uint8Array): Uint8Array;
 }
 
+/** Palette a diagram is rendered in before publishing. Shared by both
+ * renderers so mermaid and Excalidraw diagrams on one page match. */
+export type DiagramTheme = "light" | "dark";
+
 /** Renders an Excalidraw drawing from the vault to a raster image.
  *
  * Only the Obsidian plugin can implement this — rendering goes through the

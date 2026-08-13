@@ -6,6 +6,12 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 
 import type ConfluenceToolsPlugin from "./main.js";
 
+/** Declared with the renderer ports it configures, re-exported here so the
+ * settings module reads as one place. */
+import type { DiagramTheme } from "../core/ports.js";
+
+export type { DiagramTheme };
+
 export interface ConfluenceToolsSettings {
   baseUrl: string;
   email: string;
@@ -14,6 +20,8 @@ export interface ConfluenceToolsSettings {
   defaultSpaceId: string;
   /** After a download, run ObsidiSync and force our file to win on conflict. */
   autoSyncAfterDownload: boolean;
+  /** Palette for rendered mermaid and Excalidraw diagrams. */
+  diagramTheme: DiagramTheme;
 }
 
 export const DEFAULT_SETTINGS: ConfluenceToolsSettings = {
@@ -23,6 +31,7 @@ export const DEFAULT_SETTINGS: ConfluenceToolsSettings = {
   accessToken: "",
   defaultSpaceId: "",
   autoSyncAfterDownload: true,
+  diagramTheme: "dark",
 };
 
 export class ConfluenceToolsSettingTab extends PluginSettingTab {
@@ -93,6 +102,25 @@ export class ConfluenceToolsSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.defaultSpaceId)
           .onChange(async (v) => {
             this.plugin.settings.defaultSpaceId = v.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Diagram theme")
+      .setDesc(
+        "Palette for mermaid and Excalidraw diagrams rendered on upload. " +
+          "Applies to both, so diagrams on a page match. Takes effect on the " +
+          "next upload; already-published diagrams keep the theme they were " +
+          "rendered with until the note changes.",
+      )
+      .addDropdown((d) =>
+        d
+          .addOption("dark", "Dark")
+          .addOption("light", "Light")
+          .setValue(this.plugin.settings.diagramTheme)
+          .onChange(async (v) => {
+            this.plugin.settings.diagramTheme = v as DiagramTheme;
             await this.plugin.saveSettings();
           }),
       );
