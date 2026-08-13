@@ -1,7 +1,7 @@
 {
   "id": "confluence-tools",
   "name": "Confluence Tools",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "minAppVersion": "1.4.0",
   "description": "Round-trip Confluence pages as Obsidian notes — download, edit, and upload with properties, callouts, inline comments, and conflict-safe merge. Works on mobile.",
   "author": "Tobias S. Keller",
