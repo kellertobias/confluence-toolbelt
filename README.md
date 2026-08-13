@@ -14,6 +14,10 @@ There is also an **Obsidian plugin** (⚠️ work in progress) that brings the s
 
 The plugin lives in the same repo and is built to `plugin-dist/` (`main.js` + `manifest.json` + `versions.json`). Every GitHub release attaches these as assets, so you can install it straight from GitHub.
 
+<img src="https://github.com/kellertobias/confluence-toolbelt/raw/main/.docs/plugin-panel.png" alt="The Confluence Tools side panel in Obsidian, showing a synced page and the download/upload actions" width="320">
+
+The side panel shows the sync state of the current note — whether it is up to date with Confluence, its version, and when it last synced — alongside the actions you need most.
+
 ### Install with BRAT (recommended)
 
 1. Install the **BRAT** community plugin in Obsidian (Community plugins → search "BRAT").
