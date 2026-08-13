@@ -657,7 +657,9 @@ embeds untouched.
 
 ### Mermaid Diagrams
 
-Mermaid code blocks are automatically rendered as images on Confluence using [mermaid.ink](https://mermaid.ink). No Confluence plugins required.
+Mermaid code blocks are automatically rendered as images on Confluence. No Confluence plugins required.
+
+**In the Obsidian plugin** the diagram is rendered locally, using a bundled mermaid, and uploaded as a page attachment. The published page is then self-contained. **The CLI** has no browser to rasterize with, so it emits an image URL pointing at [mermaid.ink](https://mermaid.ink) instead — which means the diagram source travels to that third-party service inside the URL, and Confluence re-fetches the image on every page view. If that matters for your content, upload those pages from the plugin. The plugin also falls back to the URL if a diagram fails to render, rather than failing the upload.
 
 ````markdown
 ```mermaid
@@ -670,7 +672,7 @@ graph TD
 ```
 ````
 
-On upload, this produces a rendered diagram image visible on the Confluence page. The mermaid source is preserved in a hidden HTML comment so downloading the page reconstructs the original fenced block for local editing.
+On upload, this produces a rendered diagram image visible on the Confluence page. The mermaid source is preserved alongside it (in a collapsed "Mermaid Diagram Source" section) so downloading the page reconstructs the original fenced block for local editing — the image itself is never written into the vault.
 
 All mermaid diagram types work: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, Gantt charts, etc.
 

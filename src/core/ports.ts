@@ -148,6 +148,22 @@ export interface DiagramRenderer {
   renderPng(path: string, scale: number): Promise<Uint8Array | null>;
 }
 
+/** Renders mermaid source to a raster image.
+ *
+ * Plugin-only, but for a different reason than `DiagramRenderer`: mermaid is
+ * bundled, so the code would run anywhere — it is the rasterization that needs
+ * a DOM (`canvas`, `Image`). The CLI leaves this undefined and keeps emitting
+ * the `mermaid.ink` URL, which is also the plugin's fallback when a render
+ * fails. */
+export interface MermaidRenderer {
+  /** Whether this environment can rasterize at all. Cheap enough to check per
+   * upload; a headless context answers false rather than throwing mid-render. */
+  available(): boolean;
+  /** Render mermaid `source` to PNG bytes, or null when it could not be drawn
+   * (invalid syntax, or a diagram type this mermaid version doesn't know). */
+  renderPng(source: string, scale: number): Promise<Uint8Array | null>;
+}
+
 export interface ConfluenceConfig {
   baseUrl: string;
   email?: string;
@@ -169,4 +185,6 @@ export interface CoreContext {
   config: ConfluenceConfig;
   /** Absent on the CLI, where Excalidraw rendering is impossible. */
   diagrams?: DiagramRenderer;
+  /** Absent on the CLI, which has no DOM to rasterize with. */
+  mermaid?: MermaidRenderer;
 }

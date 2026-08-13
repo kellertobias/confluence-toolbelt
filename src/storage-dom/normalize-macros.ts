@@ -222,9 +222,17 @@ export function normalizeMacros(html: string): string {
       return `MD_MERMAID(${utf8ToBase64(code)})`;
     },
   );
-  // Suppress orphaned mermaid.ink images (source already captured above).
+  // Suppress orphaned mermaid images (source already captured above). Both
+  // forms: the mermaid.ink URL, and the locally rendered attachment the plugin
+  // uploads. Without the second the render would come back as a stray image
+  // embed sitting next to the fenced block it was made from — and, being a
+  // real attachment, would then be downloaded into the vault.
   out = out.replace(
     /<ac:image\b[^>]*>[\s\S]*?mermaid\.ink[\s\S]*?<\/ac:image>/gi,
+    "",
+  );
+  out = out.replace(
+    /<ac:image\b[^>]*>[\s\S]*?<ri:attachment\b[^>]*\bri:filename=["']mermaid-[^"']*\.png["'][\s\S]*?<\/ac:image>/gi,
     "",
   );
 

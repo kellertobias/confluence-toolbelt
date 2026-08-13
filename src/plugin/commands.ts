@@ -154,6 +154,46 @@ async function uploadReferencedImages(
  * earlier upload. The caller refuses the upload in that case: publishing a page
  * whose diagrams silently vanished is worse than not publishing it.
  */
+/**
+ * Render each mermaid diagram to a PNG attachment on the page.
+ *
+ * Returns source → attachment filename for the ones that worked. A diagram
+ * missing from that map is emitted as the `mermaid.ink` URL instead, so a
+ * render failure costs the local rendering, not the upload — unlike Excalidraw,
+ * where no fallback exists and the upload has to stop.
+ *
+ * The filename is derived from the source, so editing a diagram publishes a new
+ * attachment rather than mutating one that other page versions still reference,
+ * and an unchanged diagram is skipped by the hash check.
+ */
+async function renderMermaidDiagrams(
+  plugin: ConfluenceToolsPlugin,
+  pageId: string,
+  sources: string[],
+  sidecar: { imageHashes?: Record<string, string> },
+): Promise<Record<string, string>> {
+  const ctx = plugin.buildContext();
+  const renderer = ctx.mermaid;
+  if (!renderer?.available()) return {};
+
+  const client = plugin.client();
+  sidecar.imageHashes = sidecar.imageHashes ?? {};
+  const rendered: Record<string, string> = {};
+
+  for (const source of sources) {
+    const png = await renderer.renderPng(source, 2);
+    if (!png) continue;
+    const name = `mermaid-${(await ctx.hasher.sha256Hex(new TextEncoder().encode(source))).slice(0, 12)}.png`;
+    const hash = await ctx.hasher.sha256Hex(png);
+    if (sidecar.imageHashes[name] !== hash) {
+      await client.uploadAttachment(pageId, name, png, "image/png");
+      sidecar.imageHashes[name] = hash;
+    }
+    rendered[source] = name;
+  }
+  return rendered;
+}
+
 async function renderExcalidrawEmbeds(
   plugin: ConfluenceToolsPlugin,
   note: TFile,
@@ -866,6 +906,10 @@ export async function uploadCommand(
       canonicalish,
       sidecar,
       (m) => progress.step(m),
+      {
+        renderMermaid: (sources) =>
+          renderMermaidDiagrams(plugin, pageId, sources, sidecar),
+      },
     );
 
     if (result.status === "conflict") {

@@ -12,7 +12,7 @@
 import type { ConfluenceClient } from "../../api.js";
 import { emitHeader, parseHeader } from "../../md-header.js";
 import { enrichContentEntityLinks } from "../../storage-dom/enrich-links.js";
-import { markdownToStorageHtml } from "../../storage-dom.js";
+import { findMermaidSources, markdownToStorageHtml } from "../../storage-dom.js";
 import { obsidianToCanonical, type ObsidianSidecar } from "../dialect/obsidian.js";
 import { remoteMergeBase, sameAsBase, threeWayMerge } from "./three-way.js";
 
@@ -33,12 +33,26 @@ export type UploadSidecar = Pick<
   "comments" | "baseMarkdown" | "baseBlocks" | "version"
 >;
 
+export interface UploadOptions {
+  /**
+   * Render mermaid diagrams to page attachments, returning source → filename
+   * for the ones that succeeded.
+   *
+   * Injected rather than done by the caller beforehand, because the body that
+   * gets uploaded is not always the note: a three-way merge can pull in a
+   * diagram that only exists on the remote. Called with exactly the sources
+   * about to be emitted. Anything it omits falls back to the mermaid.ink URL.
+   */
+  renderMermaid?: (sources: string[]) => Promise<Record<string, string>>;
+}
+
 export async function uploadObsidianPage(
   client: ConfluenceClient,
   pageId: string,
   obsidianMarkdown: string,
   sidecar: UploadSidecar,
   onStep: (message: string) => void = () => {},
+  opts: UploadOptions = {},
 ): Promise<UploadResult> {
   onStep("Converting…");
   const localCanonical = obsidianToCanonical(obsidianMarkdown, sidecar);
@@ -84,8 +98,19 @@ export async function uploadObsidianPage(
     }
   }
 
+  let mermaidAttachments: Record<string, string> | undefined;
+  if (opts.renderMermaid) {
+    const sources = findMermaidSources(bodyToUpload);
+    if (sources.length) {
+      onStep("Rendering diagrams…");
+      mermaidAttachments = await opts.renderMermaid(sources);
+    }
+  }
+
   onStep("Publishing…");
-  const storageHtml = markdownToStorageHtml(bodyToUpload);
+  const storageHtml = markdownToStorageHtml(bodyToUpload, false, {
+    mermaidAttachments,
+  });
   await client.updatePageStorage(
     pageId,
     storageHtml,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   detectUnsupportedFeatures,
+  findMermaidSources,
   markdownToStorageHtml,
   storageToMarkdownBlocks,
 } from '../storage-dom.js';
@@ -2671,5 +2672,69 @@ describe('fenced blocks as their own block', () => {
       '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>A note.</p></ac:rich-text-body></ac:structured-macro>';
     const out = md(html);
     expect(out).toContain('```\n\n> <!-- panel:info:info -->');
+  });
+});
+
+describe('mermaid attachments', () => {
+  const SRC = 'graph TD\n    A --> B';
+  const fence = (src: string) => ['```mermaid', src, '```'].join('\n');
+
+  it('falls back to the mermaid.ink URL with no attachment', () => {
+    // The CLI has no DOM to rasterize with, so this stays the default path.
+    const html = markdownToStorageHtml(fence(SRC));
+    expect(html).toContain('mermaid.ink/img/pako:');
+    expect(html).not.toContain('ri:attachment');
+  });
+
+  it('emits an attachment reference when one was rendered', () => {
+    const html = markdownToStorageHtml(fence(SRC), false, {
+      mermaidAttachments: { [SRC]: 'mermaid-abc123.png' },
+    });
+    expect(html).toContain('<ri:attachment ri:filename="mermaid-abc123.png"/>');
+    expect(html).not.toContain('mermaid.ink');
+    // The source expand still rides along — it is what download reads.
+    expect(html).toContain('Mermaid Diagram Source');
+    expect(html).toContain('graph TD');
+  });
+
+  it('reconstructs the fenced block from an attachment-backed diagram', () => {
+    const html = markdownToStorageHtml(fence(SRC), false, {
+      mermaidAttachments: { [SRC]: 'mermaid-abc123.png' },
+    });
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n\n');
+    expect(md).toContain('```mermaid');
+    expect(md).toContain('graph TD');
+    // The render must not come back as a stray image embed beside the block.
+    expect(md).not.toContain('mermaid-abc123.png');
+  });
+
+  it('finds diagram sources, including inside a panel', () => {
+    const md = [
+      fence(SRC),
+      '',
+      '> <!-- panel:info:info -->',
+      '> ```mermaid',
+      '> sequenceDiagram',
+      '>     A->>B: hi',
+      '> ```',
+    ].join('\n');
+    expect(findMermaidSources(md)).toEqual([
+      SRC,
+      'sequenceDiagram\n    A->>B: hi',
+    ]);
+  });
+
+  it('de-duplicates identical diagrams', () => {
+    expect(findMermaidSources([fence(SRC), '', fence(SRC)].join('\n'))).toEqual([SRC]);
+  });
+
+  it('ignores an unterminated fence', () => {
+    expect(findMermaidSources('```mermaid\ngraph TD')).toEqual([]);
+  });
+
+  it('leaves a non-mermaid code block alone', () => {
+    expect(findMermaidSources('```sql\nSELECT 1\n```')).toEqual([]);
   });
 });

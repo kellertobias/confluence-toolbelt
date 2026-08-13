@@ -10,7 +10,9 @@
 
 export { extractHeaderExtrasFromStorage } from "./storage-dom/header-extras.js";
 export {
+  findMermaidSources,
   markdownToStorageHtml,
+  type MarkdownToStorageOptions,
   naiveMarkdownToStorageHtml,
 } from "./storage-dom/markdown-to-storage.js";
 export { replaceNodesById } from "./storage-dom/replace-nodes.js";

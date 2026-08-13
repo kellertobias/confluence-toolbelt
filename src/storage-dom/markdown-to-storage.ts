@@ -49,7 +49,71 @@ const EXPAND_END_RE = /^\s*<!--\s*\/expand\s*-->\s*$/i;
  * into a footnotes section appended at the end of the page). Inline HTML
  * comments inside table cells are preserved as-is.
  */
-export function markdownToStorageHtml(md: string, debug = false): string {
+/** Options threaded through the whole conversion, including its recursive
+ * passes over panel and expand bodies. */
+export interface MarkdownToStorageOptions {
+  /**
+   * Mermaid source → attachment filename, for diagrams already rendered and
+   * uploaded by the caller. A source found here is emitted as an attachment
+   * reference; anything missing falls back to the `mermaid.ink` URL, which is
+   * what the CLI (no DOM to rasterize with) always gets.
+   *
+   * Keyed by the diagram source verbatim, so the conversion needs no hasher of
+   * its own and stays pure.
+   */
+  mermaidAttachments?: Record<string, string>;
+}
+
+/**
+ * Every mermaid diagram source in a canonical document, in source order and
+ * de-duplicated.
+ *
+ * The counterpart of the conversion below: what this finds is exactly what
+ * `renderFencedCodeBlock` will look up in `mermaidAttachments`, so a caller can
+ * render precisely the diagrams that are about to be emitted.
+ *
+ * Blockquote prefixes are handled because a panel body is converted by a
+ * recursive pass that strips them first — a mermaid block inside a panel is
+ * still a mermaid block.
+ */
+export function findMermaidSources(md: string): string[] {
+  const lines = md.split(/\r?\n/);
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const open = (lines[i] ?? "").match(/^((?:\s*>\s?)*)```mermaid\s*$/i);
+    if (!open) continue;
+    const prefix = open[1] ?? "";
+    const body: string[] = [];
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const line = lines[j] ?? "";
+      const stripped = prefix ? line.slice(0, prefix.length) === prefix
+        ? line.slice(prefix.length)
+        : line.replace(/^(?:\s*>\s?)*/, "")
+        : line;
+      if (/^```\s*$/.test(stripped)) break;
+      body.push(stripped);
+    }
+    // An unterminated fence is not a diagram; the conversion would not emit
+    // one either.
+    if (j < lines.length) {
+      const source = body.join("\n");
+      if (!seen.has(source)) {
+        seen.add(source);
+        found.push(source);
+      }
+    }
+    i = j;
+  }
+  return found;
+}
+
+export function markdownToStorageHtml(
+  md: string,
+  debug = false,
+  opts: MarkdownToStorageOptions = {},
+): string {
   const dbg = (msg: string) => {
     if (debug) {
       console.log(`[debug:md] ${msg}`);
@@ -99,7 +163,7 @@ export function markdownToStorageHtml(md: string, debug = false): string {
       if (i < lines.length && /^```\s*$/.test(lines[i] || "")) {
         i++;
       }
-      out.push(renderFencedCodeBlock(lang, body.join("\n")));
+      out.push(renderFencedCodeBlock(lang, body.join("\n"), opts));
       continue;
     }
 
@@ -130,7 +194,7 @@ export function markdownToStorageHtml(md: string, debug = false): string {
 
     // Collapsible section: `<!-- expand:Title -->` … `<!-- /expand -->`
     if (EXPAND_START_RE.test(line)) {
-      const expand = consumeExpand(lines, i, debug);
+      const expand = consumeExpand(lines, i, debug, opts);
       if (expand) {
         dbg(`  → expand`);
         out.push(expand.html);
@@ -433,6 +497,7 @@ function consumeExpand(
   lines: string[],
   start: number,
   debug: boolean,
+  opts: MarkdownToStorageOptions = {},
 ): { html: string; nextIndex: number } | null {
   const opening = (lines[start] || "").match(EXPAND_START_RE);
   if (!opening) {
@@ -462,7 +527,7 @@ function consumeExpand(
   const titleParam = title
     ? `<ac:parameter ac:name="title">${escapeHtml(title)}</ac:parameter>`
     : "";
-  const inner = markdownToStorageHtml(body.join("\n"), debug);
+  const inner = markdownToStorageHtml(body.join("\n"), debug, opts);
   return {
     html:
       `<ac:structured-macro ac:name="expand">${titleParam}` +
@@ -476,9 +541,13 @@ function consumeExpand(
 // Code blocks
 // ---------------------------------------------------------------------------
 
-function renderFencedCodeBlock(lang: string, codeText: string): string {
+function renderFencedCodeBlock(
+  lang: string,
+  codeText: string,
+  opts: MarkdownToStorageOptions = {},
+): string {
   if (lang.toLowerCase() === "mermaid") {
-    return renderMermaidBlock(codeText);
+    return renderMermaidBlock(codeText, opts.mermaidAttachments?.[codeText]);
   }
   const langParam = lang
     ? `<ac:parameter ac:name="language">${escapeHtml(lang)}</ac:parameter>`
@@ -486,18 +555,24 @@ function renderFencedCodeBlock(lang: string, codeText: string): string {
   return `<ac:structured-macro ac:name="code">${langParam}${plainTextBody(codeText)}</ac:structured-macro>`;
 }
 
-function renderMermaidBlock(codeText: string): string {
-  const state = JSON.stringify({
-    code: codeText,
-    mermaid: { theme: "default" },
-  });
-  const compressed = getDeflater().zlib(new TextEncoder().encode(state));
-  const pakoEncoded = bytesToBase64Url(compressed);
-  const imgUrl = `https://mermaid.ink/img/pako:${pakoEncoded}?type=png`;
+/**
+ * A mermaid diagram as Confluence stores it: a rendered image, plus the source
+ * in an expand so the fenced block can be reconstructed on download.
+ *
+ * The image is an attachment when the caller has already rendered one, and the
+ * `mermaid.ink` URL otherwise. The remote form is a live dependency — the
+ * source travels to a third party inside the URL and Confluence re-fetches it
+ * on every page view — so it is the fallback, not the default: the CLI, which
+ * has no DOM to rasterize with, and a plugin render that failed.
+ */
+function renderMermaidBlock(codeText: string, attachment?: string): string {
+  const image = attachment
+    ? `<ri:attachment ri:filename="${escapeHtml(attachment)}"/>`
+    : `<ri:url ri:value="${escapeHtml(mermaidInkUrl(codeText))}"/>`;
   return (
     `<ac:image ac:align="center" ac:width="800">` +
     `<ac:parameter ac:name="width">800</ac:parameter>` +
-    `<ri:url ri:value="${escapeHtml(imgUrl)}"/>` +
+    image +
     `</ac:image>` +
     `<ac:structured-macro ac:name="expand">` +
     `<ac:parameter ac:name="title">Mermaid Diagram Source</ac:parameter>` +
@@ -506,6 +581,15 @@ function renderMermaidBlock(codeText: string): string {
     `</ac:rich-text-body>` +
     `</ac:structured-macro>`
   );
+}
+
+function mermaidInkUrl(codeText: string): string {
+  const state = JSON.stringify({
+    code: codeText,
+    mermaid: { theme: "default" },
+  });
+  const compressed = getDeflater().zlib(new TextEncoder().encode(state));
+  return `https://mermaid.ink/img/pako:${bytesToBase64Url(compressed)}?type=png`;
 }
 
 /**
