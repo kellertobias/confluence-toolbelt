@@ -1,3 +1,11 @@
+## 2.13.0 (2026-08-13)
+
+* docs: show the plugin's side panel in the README ([da25fb7](https://github.com/kellertobias/confluence-toolbelt/commit/da25fb7))
+* Merge origin/main (2.12.0 release) ([41e8434](https://github.com/kellertobias/confluence-toolbelt/commit/41e8434))
+* feat(obsidian): add a diagram theme setting, defaulting to dark ([3004df7](https://github.com/kellertobias/confluence-toolbelt/commit/3004df7))
+* feat(obsidian): render mermaid diagrams locally as attachments ([1626eb9](https://github.com/kellertobias/confluence-toolbelt/commit/1626eb9))
+* fix(storage-dom): emit fenced blocks as blocks of their own ([ea12b1c](https://github.com/kellertobias/confluence-toolbelt/commit/ea12b1c))
+
 ## 2.12.0 (2026-08-13)
 
 * Merge branch 'main' into feat/expand-macro-roundtrip ([f118100](https://github.com/kellertobias/confluence-toolbelt/commit/f118100))
