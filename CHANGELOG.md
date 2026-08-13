@@ -1,3 +1,10 @@
+## 2.12.0 (2026-08-13)
+
+* Merge branch 'main' into feat/expand-macro-roundtrip ([f118100](https://github.com/kellertobias/confluence-toolbelt/commit/f118100))
+* Merge origin/main (2.11.0 release) into main ([a0d000d](https://github.com/kellertobias/confluence-toolbelt/commit/a0d000d)), closes [#5](https://github.com/kellertobias/confluence-toolbelt/issues/5)
+* feat(obsidian): render expand sections as foldable callouts ([93a77c8](https://github.com/kellertobias/confluence-toolbelt/commit/93a77c8))
+* feat(storage-dom): round-trip expand/collapse sections ([241a166](https://github.com/kellertobias/confluence-toolbelt/commit/241a166))
+
 ## 2.11.0 (2026-08-13)
 
 * fix(obsidian): keep embed size hints out of attachment names ([9d42df9](https://github.com/kellertobias/confluence-toolbelt/commit/9d42df9))
