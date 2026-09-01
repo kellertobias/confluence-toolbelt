@@ -17,7 +17,7 @@ import {
   findExpandMacros,
   isInternalExpandTitle,
 } from "./expand-macro.js";
-import { decodeBasicEntities } from "./html-utils.js";
+import { decodeBasicEntities, decodeHtmlEntities } from "./html-utils.js";
 
 export function normalizeMacros(html: string): string {
   let out = html;
@@ -721,8 +721,13 @@ function convertAcLink(original: string, innerStr: string): string {
   // ri:content-id (when the title reference was resolved on save). Both can
   // appear alongside ri:space-key.
   if (/<ri:page[^>]*>/i.test(innerStr)) {
-    const contentTitle =
-      innerStr.match(/ri:content-title=["']([^"']+)["']/i)?.[1] || "";
+    // The title is an XML attribute, so a page called "Data Strategy & API"
+    // arrives as `Data Strategy &amp; API`. Carrying the entity into the
+    // `page:` ref points at a title that does not exist, and the upload path
+    // escapes it a second time (`&amp;amp;`).
+    const contentTitle = decodeHtmlEntities(
+      innerStr.match(/ri:content-title=["']([^"']+)["']/i)?.[1] || "",
+    );
     const contentId =
       innerStr.match(/ri:content-id=["']([^"']+)["']/i)?.[1] || "";
     const spaceKey =
@@ -743,15 +748,18 @@ function convertAcLink(original: string, innerStr: string): string {
 
   // Attachment links → token
   if (/<ri:attachment[^>]*>/i.test(innerStr)) {
-    const filename =
-      innerStr.match(/ri:filename=["']([^"']+)["']/i)?.[1] || "";
+    const filename = decodeHtmlEntities(
+      innerStr.match(/ri:filename=["']([^"']+)["']/i)?.[1] || "",
+    );
     const linkText = extractLinkBody(innerStr) || filename;
     return `MD_ATTACH_LINK~~${encodeURIComponent(filename)}~~${encodeURIComponent(linkText)}~~END`;
   }
 
   // URL links → token
   if (/<ri:url[^>]*>/i.test(innerStr)) {
-    const url = innerStr.match(/ri:value=["']([^"']+)["']/i)?.[1] || "";
+    const url = decodeHtmlEntities(
+      innerStr.match(/ri:value=["']([^"']+)["']/i)?.[1] || "",
+    );
     const linkText = extractLinkBody(innerStr) || url;
     return `MD_URL_LINK~~${encodeURIComponent(url)}~~${encodeURIComponent(linkText)}~~END`;
   }
@@ -764,5 +772,7 @@ function extractLinkBody(innerStr: string): string {
     innerStr.match(
       /<ac:plain-text-link-body[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ac:plain-text-link-body>/i,
     ) || innerStr.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
-  return (linkBodyMatch?.[1] || "").replace(/<[^>]+>/g, "").trim();
+  return decodeHtmlEntities(
+    (linkBodyMatch?.[1] || "").replace(/<[^>]+>/g, ""),
+  ).trim();
 }

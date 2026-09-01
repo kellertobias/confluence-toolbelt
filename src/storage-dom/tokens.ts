@@ -193,7 +193,47 @@ function asOwnBlock(
  * images, mentions, code blocks, and mermaid diagrams.
  */
 export function decodeMdCommentTokens(s: string): string {
-  let out = s
+  /**
+   * Panels are decoded first, before any token that can expand into markdown
+   * containing a `]` (page, attachment and URL links all do).
+   *
+   * Why: the panel payload is `encodeURIComponent`-ed, so a literal `]` can
+   * never occur inside it — which is exactly what lets the body group below
+   * stop at the first one. Decode a link that sits inside a panel earlier and
+   * its `[text](ref)` drops a bracket into the still-encoded payload: the
+   * panel is truncated there, its callout loses everything after the link, and
+   * the remainder of the body spills into the document as raw percent-encoded
+   * text. The body is recursively decoded here, so nested tokens still get
+   * their turn.
+   */
+  let out = s.replace(
+    /MD(?:\\)?_PANEL\(([^,)]*),([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
+    (_m, colorEnc, iconEnc, bodyEnc) => {
+      const color = decodePayload(colorEnc) || "info";
+      const icon = decodePayload(iconEnc) || color;
+      const innerHtml = decodePayload(bodyEnc);
+      const innerMd = unescapeMarkdownUnderscores(
+        decodeMdCommentTokens(turndown.turndown(innerHtml || "")),
+      );
+      const lines = innerMd.split(/\r?\n/);
+      const outLines: string[] = [`> <!-- panel:${color}:${icon} -->`];
+      for (const l of lines) {
+        outLines.push(l.trim().length ? `> ${l}` : ">");
+      }
+      // A panel is a block. Confluence happily stores two of them back to
+      // back (and puts them in one text node), so without explicit blank
+      // lines the second one's preamble glues onto the first one's last line
+      // and neither is recognized as a blockquote any more.
+      return `\n\n${outLines.join("\n")}\n\n`;
+    },
+  );
+
+  // Collapse the blank-line runs the panel separator can pile up. Done here,
+  // before code/mermaid tokens are decoded, so it can never touch blank lines
+  // that belong inside a fenced block.
+  out = out.replace(/\n{3,}/g, "\n\n");
+
+  out = out
     .replace(
       /MD(?:\\)?_COMMENT\(([^)]+)\)/g,
       (_m, enc) => `<!-- ${decodePayload(enc)} -->`,
@@ -246,33 +286,7 @@ export function decodeMdCommentTokens(s: string): string {
         const linkText = decodePayload(textEnc);
         return `[${linkText}](${url})`;
       },
-    )
-    .replace(
-      /MD(?:\\)?_PANEL\(([^,)]*),([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
-      (_m, colorEnc, iconEnc, bodyEnc) => {
-        const color = decodePayload(colorEnc) || "info";
-        const icon = decodePayload(iconEnc) || color;
-        const innerHtml = decodePayload(bodyEnc);
-        const innerMd = unescapeMarkdownUnderscores(
-          decodeMdCommentTokens(turndown.turndown(innerHtml || "")),
-        );
-        const lines = innerMd.split(/\r?\n/);
-        const outLines: string[] = [`> <!-- panel:${color}:${icon} -->`];
-        for (const l of lines) {
-          outLines.push(l.trim().length ? `> ${l}` : ">");
-        }
-        // A panel is a block. Confluence happily stores two of them back to
-        // back (and puts them in one text node), so without explicit blank
-        // lines the second one's preamble glues onto the first one's last line
-        // and neither is recognized as a blockquote any more.
-        return `\n\n${outLines.join("\n")}\n\n`;
-      },
     );
-
-  // Collapse the blank-line runs the panel separator can pile up. Done here,
-  // before code/mermaid tokens are decoded, so it can never touch blank lines
-  // that belong inside a fenced block.
-  out = out.replace(/\n{3,}/g, "\n\n");
 
   out = out.replace(
       /MD(?:\\)?_STATUS\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,

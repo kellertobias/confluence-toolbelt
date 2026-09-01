@@ -591,6 +591,23 @@ describe('storageToMarkdownBlocks', () => {
     expect(md).toContain('[the design doc](page:Design Document)');
   });
 
+  it('decodes XML entities in a page title and restores them on upload', () => {
+    const html =
+      '<p>See <ac:link>' +
+      '<ri:page ri:content-title="Data Strategy &amp; Unified API"/>' +
+      '<ac:plain-text-link-body><![CDATA[the ADR]]></ac:plain-text-link-body>' +
+      '</ac:link>.</p>';
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    // The ref has to carry the real title — `&amp;` names no page, and the
+    // upload path would escape it again into `&amp;amp;`.
+    expect(md).toContain('[the ADR](page:Data Strategy & Unified API)');
+    expect(markdownToStorageHtml(md)).toContain(
+      '<ri:page ri:content-title="Data Strategy &amp; Unified API"/>',
+    );
+  });
+
   it('converts Confluence page links with space key and title to markdown', () => {
     const html = `
       <p>
@@ -2491,6 +2508,44 @@ describe('panel bodies', () => {
     expect(out).toContain('>   "a": [1,2]');
     expect(out).toContain('> ```');
     expect(out).not.toContain('MD_CODE');
+  });
+
+  it('keeps a page link and the text after it inside a panel', () => {
+    const html =
+      '<ac:structured-macro ac:name="note"><ac:rich-text-body>' +
+      '<p><strong>Basis</strong>: ' +
+      '<ac:link><ri:page ri:content-title="ADR 004"/>' +
+      '<ac:plain-text-link-body><![CDATA[ADR 004]]></ac:plain-text-link-body>' +
+      '</ac:link>' +
+      ' &mdash; it sets the <em>scope</em>.</p>' +
+      '</ac:rich-text-body></ac:structured-macro>';
+    const out = md(html);
+    // The link decodes to markdown, and the sentence after it stays in the
+    // callout instead of spilling out as percent-encoded panel payload.
+    expect(out).toBe(
+      '> <!-- panel:note:note -->\n' +
+        '> **Basis**: [ADR 004](page:ADR 004) \u2014 it sets the *scope*.',
+    );
+    expect(out).not.toContain('%20');
+  });
+
+  it('keeps an attachment and a URL link inside a panel', () => {
+    const html =
+      '<ac:structured-macro ac:name="info"><ac:rich-text-body>' +
+      '<p>see ' +
+      '<ac:link><ri:attachment ri:filename="spec.pdf"/>' +
+      '<ac:plain-text-link-body><![CDATA[the spec]]></ac:plain-text-link-body>' +
+      '</ac:link>' +
+      ' and ' +
+      '<ac:link><ri:url ri:value="https://example.com/a?x=1&amp;y=2"/>' +
+      '<ac:plain-text-link-body><![CDATA[the site]]></ac:plain-text-link-body>' +
+      '</ac:link>' +
+      ' before starting.</p>' +
+      '</ac:rich-text-body></ac:structured-macro>';
+    const out = md(html);
+    expect(out).toContain('[the spec](#attachment:spec.pdf)');
+    expect(out).toContain('[the site](https://example.com/a?x=1&y=2)');
+    expect(out).toContain('before starting.');
   });
 
   it('does not truncate a panel at a nested macro', () => {

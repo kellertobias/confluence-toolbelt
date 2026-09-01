@@ -106,7 +106,11 @@ export function inlineHtml(s: string): string {
   out = out.replace(
     /\[((?:[^[\]]|\[[^[\]]*\])+)\]\(([^)]+)\)/g,
     (_m, text, href) => {
-      const hrefStr = String(href || "");
+      // The href arrives HTML-escaped, same as the link text below: a page
+      // called "Data Strategy & API" reaches here as `Data Strategy &amp; API`.
+      // Escaping that again would store `&amp;amp;` and point the link at a
+      // title that does not exist.
+      const hrefStr = decodeBasicEntities(String(href || ""));
 
       // Page links by ID: [text](pageid:12345) or [text](pageid:SPACE:12345)
       // Always use ri:content-entity — content IDs are globally unique and
