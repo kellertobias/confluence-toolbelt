@@ -1,3 +1,8 @@
+## <small>2.13.4 (2026-09-01)</small>
+
+* Merge origin/main (2.13.3 release) ([a390ae6](https://github.com/kellertobias/confluence-toolbelt/commit/a390ae6))
+* fix(storage-dom): emit panel macros Confluence has, not ADF panel types ([60f9a47](https://github.com/kellertobias/confluence-toolbelt/commit/60f9a47))
+
 ## <small>2.13.3 (2026-09-01)</small>
 
 * Merge origin/main (2.13.2 release) ([50f21b0](https://github.com/kellertobias/confluence-toolbelt/commit/50f21b0))
