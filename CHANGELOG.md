@@ -1,3 +1,8 @@
+## <small>2.13.3 (2026-09-01)</small>
+
+* Merge origin/main (2.13.2 release) ([50f21b0](https://github.com/kellertobias/confluence-toolbelt/commit/50f21b0))
+* fix(storage-dom): stop links truncating panels, and decode title entities ([3dd43df](https://github.com/kellertobias/confluence-toolbelt/commit/3dd43df))
+
 ## <small>2.13.2 (2026-08-13)</small>
 
 * Merge origin/main (2.13.1 release) ([966c8c5](https://github.com/kellertobias/confluence-toolbelt/commit/966c8c5))
