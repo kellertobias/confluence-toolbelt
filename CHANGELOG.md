@@ -1,3 +1,8 @@
+## <small>2.13.2 (2026-08-13)</small>
+
+* Merge origin/main (2.13.1 release) ([966c8c5](https://github.com/kellertobias/confluence-toolbelt/commit/966c8c5))
+* fix(storage-dom): stop markdown escapes multiplying, and link .md notes ([45dbb6b](https://github.com/kellertobias/confluence-toolbelt/commit/45dbb6b)), closes [#sources](https://github.com/kellertobias/confluence-toolbelt/issues/sources)
+
 ## <small>2.13.1 (2026-08-13)</small>
 
 * fix(obsidian): map panel colours instead of panel names ([4016d2d](https://github.com/kellertobias/confluence-toolbelt/commit/4016d2d))
