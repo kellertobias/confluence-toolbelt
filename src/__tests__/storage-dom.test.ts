@@ -468,6 +468,24 @@ describe('storageToMarkdownBlocks', () => {
     expect(back).toContain('![Diagram](#diagram.png)');
   });
 
+  it('only emits panel macros Confluence actually has', () => {
+    // Confluence has four coloured panel macros plus the plain one. `success`
+    // and `error` are ADF panel *types* with no macro behind them: emitting
+    // them made the block render as "Error loading the extension!".
+    const CONFLUENCE_PANEL_MACROS = ['info', 'note', 'tip', 'warning', 'panel'];
+    const macroFor = (color: string) =>
+      markdownToStorageHtml(
+        [`> <!-- panel:${color}:${color} -->`, '> Body.'].join('\n'),
+      ).match(/ac:name="([^"]+)"/)?.[1];
+
+    for (const color of ['info', 'note', 'tip', 'warning', 'success', 'error', 'panel']) {
+      expect(CONFLUENCE_PANEL_MACROS).toContain(macroFor(color));
+    }
+    // The ADF-only types keep their colour: green stays green, red stays red.
+    expect(macroFor('success')).toBe('tip');
+    expect(macroFor('error')).toBe('warning');
+  });
+
   it('panel macro downloads as blockquote with config tag and uploads back', () => {
     const html = `
       <ac:structured-macro ac:name="info">

@@ -466,8 +466,10 @@ describe("panel colour mapping", () => {
   it("maps callouts back onto the panel of the same colour", () => {
     expect(up("info")).toContain("panel:info:info");
     expect(up("warning")).toContain("panel:note:note");
-    expect(up("tip")).toContain("panel:success:success");
-    expect(up("danger")).toContain("panel:error:error");
+    // Green and red go to the panel types the upload can actually store:
+    // `success`/`error` are ADF-only and have no macro behind them.
+    expect(up("tip")).toContain("panel:tip:tip");
+    expect(up("danger")).toContain("panel:warning:warning");
     expect(up("note")).toContain("panel:panel:panel");
   });
 
@@ -481,7 +483,7 @@ describe("panel colour mapping", () => {
   });
 
   it("round-trips the types that map one-to-one without a marker", () => {
-    for (const p of ["info", "note", "success", "error", "panel"]) {
+    for (const p of ["info", "note", "tip", "warning", "panel"]) {
       const { obsidian, canonical } = panelRoundTrip(
         [`> <!-- panel:${p}:${p} -->`, "> Body."].join("\n"),
       );
@@ -492,8 +494,10 @@ describe("panel colour mapping", () => {
 
   it("preserves the types that collide, rather than changing their colour", () => {
     // Both `tip` and `success` come down as [!tip], and both `warning` and
-    // `error` as [!danger] — so these two carry a marker to stay themselves.
-    for (const p of ["tip", "warning"]) {
+    // `error` as [!danger] — so one of each pair carries a marker to stay
+    // itself. It is the ADF-only name that carries it: a page that has been
+    // uploaded once holds `tip`/`warning`, and those stay marker-free.
+    for (const p of ["success", "error"]) {
       const { obsidian, canonical } = panelRoundTrip(
         [`> <!-- panel:${p}:${p} -->`, "> Body."].join("\n"),
       );

@@ -699,6 +699,25 @@ function inlineWithTokens(text: string): string {
 // Blockquotes and info panels
 // ---------------------------------------------------------------------------
 
+/**
+ * Panel colour → the Confluence macro that paints it.
+ *
+ * Confluence only has four coloured panel macros. `success` and `error` are
+ * ADF panel *types* — the editor stores those as `ac:adf-extension` nodes, and
+ * there is no macro by either name. Emitting `ac:name="success"` produced a
+ * macro Confluence cannot resolve, and the block rendered as "Error loading
+ * the extension!" instead of a panel. Map them onto the classic macro of the
+ * same colour: green stays green, red stays red.
+ */
+const PANEL_MACRO_FOR_COLOR: Record<string, string> = {
+  info: "info", // blue
+  note: "note", // yellow
+  tip: "tip", // green
+  warning: "warning", // red
+  success: "tip", // green
+  error: "warning", // red
+};
+
 function consumeInfoPanel(
   lines: string[],
   start: number,
@@ -739,11 +758,10 @@ function consumeInfoPanel(
     };
   }
 
-  // Map common colors to known macros where applicable, else use panel with bgColor.
-  const known = ["info", "note", "warning", "tip", "success", "error"];
-  if (known.includes(color)) {
+  const macro = PANEL_MACRO_FOR_COLOR[color];
+  if (macro) {
     return {
-      html: `<ac:structured-macro ac:name="${color}"><ac:rich-text-body>${innerWithComments}</ac:rich-text-body></ac:structured-macro>`,
+      html: `<ac:structured-macro ac:name="${macro}"><ac:rich-text-body>${innerWithComments}</ac:rich-text-body></ac:structured-macro>`,
       nextIndex: i,
     };
   }

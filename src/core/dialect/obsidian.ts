@@ -108,6 +108,15 @@ const PANEL_TO_CALLOUT: Record<string, string> = {
  * Confluence as `tip`, and both `error` and `warning` as `danger`. The pairs
  * that cannot be inverted are preserved verbatim in the `%%cf:…%%` marker
  * instead, so a page keeps the exact panel type it had.
+ *
+ * Of each pair, the round-tripping member is the one the upload can actually
+ * write: `success` and `error` are ADF-only panel types with no macro behind
+ * them, so a green panel is stored as `tip` and a red one as `warning`. Point
+ * the primary callout types at those, and a green or red callout settles to a
+ * clean `> [!tip]` / `> [!danger]` after its first upload instead of carrying
+ * a `%%cf:…%%` marker for the rest of the page's life. The ADF names still
+ * arrive from Confluence on a page nobody has re-uploaded yet, and the marker
+ * carries them until then.
  */
 const CALLOUT_TO_PANEL: Record<string, string> = {
   info: "info",
@@ -118,13 +127,13 @@ const CALLOUT_TO_PANEL: Record<string, string> = {
   question: "note", // yellow in Obsidian
   help: "note",
   faq: "note",
-  tip: "success",
+  tip: "tip",
   hint: "success",
   important: "success",
   success: "success",
   check: "success",
   done: "success",
-  danger: "error",
+  danger: "warning",
   error: "error",
   failure: "error",
   fail: "error",
