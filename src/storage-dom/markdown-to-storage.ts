@@ -811,13 +811,20 @@ function joinCellLines(parts: string[]): string {
   return trimmed.join("\\n");
 }
 
+/**
+ * GFM delimiter row: cells of one or more hyphens (colons optional), at least
+ * one pipe so a list item like `- item` is not mistaken for one.
+ */
+const TABLE_DELIMITER_ROW_RE =
+  /^(?=[^|]*\|)\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+
 function looksLikeTableHeader(lines: string[], index: number): boolean {
   if (index + 1 >= lines.length) {
     return false;
   }
   const header = lines[index];
   const sep = lines[index + 1];
-  return /\|/.test(header || "") && /^\s*\|?\s*:?\s*-{3,}/.test(sep || "");
+  return /\|/.test(header || "") && TABLE_DELIMITER_ROW_RE.test(sep || "");
 }
 
 function consumeTable(

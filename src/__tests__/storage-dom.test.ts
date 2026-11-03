@@ -1000,6 +1000,24 @@ describe('table config (layout and column widths)', () => {
     expect(html).not.toContain('<colgroup>');
   });
 
+  it('renders a minimal GFM delimiter row (one hyphen per cell) as a table', () => {
+    const md = ['| A | B |', '|-|-|', '| 1 | 2 |'].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<th><p>A</p></th>');
+    expect(html).toContain('<td><p>2</p></td>');
+  });
+
+  it('keeps alignment colons on a minimal delimiter row', () => {
+    const md = ['| A | B |', '|:-|-:|', '| 1 | 2 |'].join('\n');
+    expect(markdownToStorageHtml(md)).toContain('<table>');
+  });
+
+  it('does not take a list item under a pipe line for a delimiter row', () => {
+    const md = ['a | b', '- item'].join('\n');
+    expect(markdownToStorageHtml(md)).not.toContain('<table>');
+  });
+
   it('uploads plain table without config comment as before', () => {
     const md = ['| A | B |', '| --- | --- |', '| 1 | 2 |'].join('\n');
     const html = markdownToStorageHtml(md);
