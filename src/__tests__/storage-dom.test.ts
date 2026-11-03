@@ -453,7 +453,9 @@ describe('storageToMarkdownBlocks', () => {
     const back = markdownToStorageHtml(md);
     expect(back).toContain('<ac:image');
     expect(back).toContain('<ri:url ri:value="https://example.com/img.png"/>');
-    expect(back).toContain('<ac:caption>Figure 1: Example</ac:caption>');
+    expect(back).toContain(
+      '<ac:caption><p>Figure 1: Example</p></ac:caption>',
+    );
   });
 
   it('round-trips an attached image (markdown #filename <-> ri:attachment)', () => {
@@ -2637,6 +2639,24 @@ describe('image captions', () => {
       .join('\n');
     expect(out).toContain('![MVP the diagram](#d.png)');
     expect(out).not.toContain('MD_STATUS');
+  });
+});
+
+describe('image storage form on upload', () => {
+  it('writes the editor form: attributes instead of parameters, caption in a paragraph', () => {
+    const html = markdownToStorageHtml('![Diagram](#diagram.png)');
+    expect(html).toBe(
+      '<ac:image ac:align="center" ac:layout="center" ac:custom-width="true" ac:width="500">' +
+        '<ri:attachment ri:filename="diagram.png"/>' +
+        '<ac:caption><p>Diagram</p></ac:caption></ac:image>',
+    );
+    expect(html).not.toContain('<ac:parameter');
+  });
+
+  it('omits the caption when there is no alt text', () => {
+    const html = markdownToStorageHtml('![](#diagram.png)');
+    expect(html).not.toContain('<ac:caption>');
+    expect(html).not.toContain('<ac:parameter');
   });
 });
 
