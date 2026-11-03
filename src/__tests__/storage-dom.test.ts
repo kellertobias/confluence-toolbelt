@@ -1000,6 +1000,37 @@ describe('table config (layout and column widths)', () => {
     expect(html).not.toContain('<colgroup>');
   });
 
+  it('keeps the table config when blank lines separate it from the table', () => {
+    const md = [
+      '<!-- table:full 1,2,1 -->',
+      '',
+      '| A | B | C |',
+      '| --- | --- | --- |',
+      '| 1 | 2 | 3 |',
+    ].join('\n');
+    const html = markdownToStorageHtml(md);
+    expect(html).toContain('data-table-width="1800"');
+    expect(html).toContain('<colgroup>');
+    expect(html).not.toContain('&lt;!-- table:');
+  });
+
+  it('leaves no blank line between the table config and the table on download', () => {
+    const html = `
+      <table data-table-width="1800">
+        <colgroup>
+          <col style="width: 100px;" />
+          <col style="width: 200px;" />
+        </colgroup>
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody><tr><td>1</td><td>2</td></tr></tbody>
+      </table>
+    `;
+    const md = storageToMarkdownBlocks(html)
+      .map((b) => b.markdown)
+      .join('\n\n');
+    expect(md).toContain('<!-- table:full 1,2 -->\n| A | B |');
+  });
+
   it('uploads plain table without config comment as before', () => {
     const md = ['| A | B |', '| --- | --- |', '| 1 | 2 |'].join('\n');
     const html = markdownToStorageHtml(md);

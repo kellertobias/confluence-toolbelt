@@ -215,7 +215,10 @@ export function markdownToStorageHtml(
     const tableConfigMatch = line.match(
       /^\s*<!--\s*table:(\S+)(?:\s+([\d,]+))?\s*-->\s*$/i,
     );
-    if (tableConfigMatch && looksLikeTableHeader(lines, i + 1)) {
+    const tableStart = tableConfigMatch
+      ? nextTableHeaderIndex(lines, i + 1)
+      : -1;
+    if (tableConfigMatch && tableStart >= 0) {
       dbg(`  → table (with config)`);
       const layoutName = (tableConfigMatch[1] || "").toLowerCase();
       const sharesStr = tableConfigMatch[2] || "";
@@ -225,7 +228,7 @@ export function markdownToStorageHtml(
             .map(Number)
             .filter((n) => !Number.isNaN(n) && n > 0)
         : undefined;
-      i++;
+      i = tableStart;
       const { html, nextIndex } = consumeTable(lines, i, {
         layout: layoutName,
         colWidths,
@@ -422,7 +425,10 @@ function startsNewBlock(lines: string[], i: number): boolean {
   if (EXPAND_START_RE.test(line) || EXPAND_END_RE.test(line)) {
     return true;
   }
-  if (/^\s*<!--\s*table:/i.test(line) && looksLikeTableHeader(lines, i + 1)) {
+  if (
+    /^\s*<!--\s*table:/i.test(line) &&
+    nextTableHeaderIndex(lines, i + 1) >= 0
+  ) {
     return true;
   }
   if (DEFLIST_COMMENT_RE.test(line)) {
@@ -818,6 +824,19 @@ function looksLikeTableHeader(lines: string[], index: number): boolean {
   const header = lines[index];
   const sep = lines[index + 1];
   return /\|/.test(header || "") && /^\s*\|?\s*:?\s*-{3,}/.test(sep || "");
+}
+
+/**
+ * Index of the table header at or after `from`, skipping blank lines, or -1.
+ * Lets a `<!-- table:... -->` directive sit above its table with blank lines
+ * between them.
+ */
+function nextTableHeaderIndex(lines: string[], from: number): number {
+  let j = from;
+  while (j < lines.length && /^\s*$/.test(lines[j] || "")) {
+    j++;
+  }
+  return looksLikeTableHeader(lines, j) ? j : -1;
 }
 
 function consumeTable(
