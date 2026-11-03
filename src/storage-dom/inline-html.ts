@@ -9,6 +9,21 @@
 import { decodeBasicEntities, escapeHtml } from "./html-utils.js";
 import { unescapeMarkdownPunctuation } from "./markdown-escapes.js";
 
+/**
+ * An image in the form the Confluence editor itself writes: layout and width
+ * as attributes (no `<ac:parameter>` children) and the caption as a paragraph.
+ * The editor does not display the parameter form reliably.
+ */
+export function imageStorageHtml(src: string, caption: string): string {
+  const body = src.startsWith("#")
+    ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
+    : `<ri:url ri:value="${escapeHtml(src)}"/>`;
+  const capHtml = caption
+    ? `<ac:caption><p>${inlineHtml(caption)}</p></ac:caption>`
+    : "";
+  return `<ac:image ac:align="center" ac:layout="center" ac:custom-width="true" ac:width="500">${body}${capHtml}</ac:image>`;
+}
+
 export function inlineHtml(s: string): string {
   // Protect escaped asterisks so they remain literal and are not interpreted
   // as formatting. We swap them with a durable token during processing and
@@ -40,16 +55,7 @@ export function inlineHtml(s: string): string {
 
   // Inline images ![alt](src) → Confluence image with 500px width
   out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt, href) => {
-    const src = String(href || "");
-    const body = src.startsWith("#")
-      ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
-      : `<ri:url ri:value="${escapeHtml(src)}"/>`;
-    const widthParam = `<ac:parameter ac:name="width">500</ac:parameter>`;
-    const alignParam = `<ac:parameter ac:name="align">center</ac:parameter>`;
-    const capHtml = alt
-      ? `<ac:caption>${inlineHtml(String(alt))}</ac:caption>`
-      : "";
-    return `<ac:image ac:width="500" ac:align="center">${widthParam}${alignParam}${body}${capHtml}</ac:image>`;
+    return imageStorageHtml(String(href || ""), String(alt || ""));
   });
 
   // Code spans — stash contents behind placeholders so stray `*` inside code

@@ -11,7 +11,7 @@
 import { bytesToBase64Url } from "../core/b64.js";
 import { getDeflater } from "./deflate.js";
 import { decodeBasicEntities, escapeHtml, escapeRegExp } from "./html-utils.js";
-import { inlineHtml } from "./inline-html.js";
+import { imageStorageHtml, inlineHtml } from "./inline-html.js";
 import { TABLE_WIDTH_PX } from "./table-layout.js";
 import {
   replaceCommentWrapperCommentsWithTokens,
@@ -637,22 +637,8 @@ function consumeIndentedCodeBlock(
 // Images
 // ---------------------------------------------------------------------------
 
-/**
- * Constrain image display to a maximum width of 500px for readability.
- * Provide both attribute and parameter forms for broad compatibility, and
- * center images for better visual balance.
- */
 function renderImage(alt: string, src: string, caption: string): string {
-  const body = src.startsWith("#")
-    ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
-    : `<ri:url ri:value="${escapeHtml(src)}"/>`;
-  const captionOrAlt = caption || alt;
-  const capHtml = captionOrAlt
-    ? `<ac:caption>${inlineHtml(captionOrAlt)}</ac:caption>`
-    : "";
-  const widthParam = `<ac:parameter ac:name="width">500</ac:parameter>`;
-  const alignParam = `<ac:parameter ac:name="align">center</ac:parameter>`;
-  return `<ac:image ac:width="500" ac:align="center">${widthParam}${alignParam}${body}${capHtml}</ac:image>`;
+  return imageStorageHtml(src, caption || alt);
 }
 
 // ---------------------------------------------------------------------------
