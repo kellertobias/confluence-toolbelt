@@ -2640,6 +2640,49 @@ describe('image captions', () => {
   });
 });
 
+describe('adjacent images', () => {
+  const twoImages =
+    '<p><ac:image><ri:attachment ri:filename="a.png"/><ac:caption><p>cap a</p></ac:caption></ac:image>' +
+    '<ac:image><ri:attachment ri:filename="b.png"/><ac:caption><p>cap b</p></ac:caption></ac:image></p>';
+
+  it('downloads each image of a paragraph on its own line', () => {
+    const md = storageToMarkdownBlocks(twoImages)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    expect(md).toBe('![cap a](#a.png)\n![cap b](#b.png)');
+  });
+
+  it.each([
+    ['on one line', '![cap a](#a.png)![cap b](#b.png)'],
+    ['separated by a space', '![cap a](#a.png) ![cap b](#b.png)'],
+    ['on consecutive lines', '![cap a](#a.png)\n![cap b](#b.png)'],
+  ])('uploads two images %s as two images', (_name, md) => {
+    const html = markdownToStorageHtml(md);
+    expect(html.match(/<ac:image\b/g)).toHaveLength(2);
+    expect(html).toContain('<ri:attachment ri:filename="a.png"/>');
+    expect(html).toContain('<ri:attachment ri:filename="b.png"/>');
+    expect(html).toContain('cap a');
+    expect(html).toContain('cap b');
+    expect(html).not.toContain('](');
+  });
+
+  it('round-trips two images in one paragraph', () => {
+    const md = storageToMarkdownBlocks(twoImages)
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    const back = storageToMarkdownBlocks(markdownToStorageHtml(md))
+      .map((b) => b.markdown.trim())
+      .join('\n');
+    expect(back).toBe(md);
+  });
+
+  it('still reads a line under a single image as its caption', () => {
+    const html = markdownToStorageHtml('![alt](#a.png)\nThe caption');
+    expect(html).toContain('The caption');
+    expect(html.match(/<ac:image\b/g)).toHaveLength(1);
+  });
+});
+
 describe('inline status macros on upload', () => {
   it('converts a status that is not alone on its line', () => {
     const back = markdownToStorageHtml(

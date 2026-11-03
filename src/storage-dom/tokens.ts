@@ -306,11 +306,16 @@ export function decodeMdCommentTokens(s: string): string {
     )
     .replace(
       /MD(?:\\)?_IMAGE\(([^)]*)\)(?:\\)?\[([\s\S]*?)(?:\\)?\]/g,
-      (_m, refEnc, capEnc) => {
+      (_m, refEnc, capEnc, offset: number, whole: string) => {
         const ref = decodePayload(refEnc);
         const cap = decodePayload(capEnc);
         const src = ref.startsWith("attach:") ? `#${ref.slice(7)}` : ref;
-        return `![${cap || ""}](${src})`;
+        // Images that share a paragraph each get their own line, so they
+        // survive being uploaded again.
+        const followedByImage = /^[ \t]*MD(?:\\)?_IMAGE\(/.test(
+          whole.slice(offset + _m.length),
+        );
+        return `![${cap || ""}](${src})${followedByImage ? "\n" : ""}`;
       },
     )
     .replace(

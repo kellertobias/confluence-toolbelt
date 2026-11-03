@@ -320,6 +320,19 @@ export function markdownToStorageHtml(
       continue;
     }
 
+    // Several images on one line: each is its own image, none is a caption.
+    if (IMAGES_ONLY_LINE_RE.test(line)) {
+      const images = [...line.matchAll(IMAGE_MD_RE)];
+      if (images.length > 1) {
+        dbg(`  → images (${images.length})`);
+        for (const img of images) {
+          out.push(renderImage(img[1] || "", img[2] || "", ""));
+        }
+        i++;
+        continue;
+      }
+    }
+
     // Markdown image, optionally followed by a caption line.
     const imgLine = line.match(/^!\[(.*?)\]\((.*?)\)\s*$/);
     if (imgLine) {
@@ -327,7 +340,8 @@ export function markdownToStorageHtml(
       const alt = imgLine[1] || "";
       const src = imgLine[2] || "";
       const next = lines[i + 1] || "";
-      const caption = /^\s*$/.test(next) ? "" : next.trim();
+      const caption =
+        /^\s*$/.test(next) || IMAGES_ONLY_LINE_RE.test(next) ? "" : next.trim();
       out.push(renderImage(alt, src, caption));
       i += caption ? 2 : 1;
       continue;
@@ -642,6 +656,9 @@ function consumeIndentedCodeBlock(
  * Provide both attribute and parameter forms for broad compatibility, and
  * center images for better visual balance.
  */
+const IMAGE_MD_RE = /!\[([^\]]*)\]\(([^)]*)\)/g;
+const IMAGES_ONLY_LINE_RE = /^\s*(?:!\[[^\]]*\]\([^)]*\)\s*)+$/;
+
 function renderImage(alt: string, src: string, caption: string): string {
   const body = src.startsWith("#")
     ? `<ri:attachment ri:filename="${escapeHtml(src.slice(1))}"/>`
